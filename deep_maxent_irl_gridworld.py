@@ -74,9 +74,15 @@ class GWExperiment(object):
       self._gw = gridworld.GridWorld(rmap_gt, {}, 1 - ACT_RAND)
     self._rewards_gt = np.reshape(rmap_gt, H*W, order='F')
     self._P_a = self._gw.get_transition_mat()
+    ts = time.time()
     self._values_gt, self._policy_gt = value_iteration.value_iteration(self._P_a, self._rewards_gt, GAMMA, error=0.01,
                                                                        deterministic=True)
+    te = time.time()
+    print "value iteration time of ground truth: ", te-ts
+    ts = time.time()
     self.save_plt("gt", (3*w, h), self._rewards_gt, self._values_gt, self._policy_gt)
+    te = time.time()
+    print "saving plt time: ", te-ts
     self._demo_trajs = self.generate_demonstrations()
     self._feat_map = np.eye(h*w) if feat_map is None else feat_map
     self._gpu_fraction = gpu_fraction
@@ -119,11 +125,20 @@ class GWExperiment(object):
   def test_once(self, exp_id):
     tf.reset_default_graph()
     print 'Deep Max Ent IRL training ..'
+    ts = time.time()
     rewards = deep_maxent_irl(self._feat_map, self._P_a, GAMMA, self._demo_trajs, self._learning_rate, self._n_iters,
                               self._gpu_fraction)
+    te = time.time()
+    print 'IRL time: ', te-ts
+    ts = time.time()
     values, policy = value_iteration.value_iteration(self._P_a, rewards, self._gamma, error=0.01, deterministic=True)
+    te =time.time()
+    print 'value iteration time of recovered: ', te-ts
     # plots
+    ts = time.time()
     self.save_plt(exp_id, (3*self._w, self._h), rewards, values, policy)
+    te = time.time()
+    print 'saving plt time: ', te-ts
 
   def test_n_times(self, n):
     for i in range(n):
