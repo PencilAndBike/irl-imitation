@@ -9,16 +9,14 @@ from utils import *
 
 
 class DeepIRLFC:
-
-
-  def __init__(self, n_input, lr, n_h1=400, n_h2=300, l2=10, name='deep_irl_fc'):
+  def __init__(self, n_input, lr, n_h1=400, n_h2=300, l2=10, name='deep_irl_fc', gpu_fraction=0.2):
     self.n_input = n_input
     self.lr = lr
     self.n_h1 = n_h1
     self.n_h2 = n_h2
     self.name = name
-
-    self.sess = tf.Session()
+    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=gpu_fraction)
+    self.sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
     self.input_s, self.reward, self.theta = self._build_network(self.name)
     self.optimizer = tf.train.GradientDescentOptimizer(lr)
     
@@ -117,7 +115,7 @@ def demo_svf(trajs, n_states):
   p = p/len(trajs)
   return p
 
-def deep_maxent_irl(feat_map, P_a, gamma, trajs, lr, n_iters):
+def deep_maxent_irl(feat_map, P_a, gamma, trajs, lr, n_iters, gpu_fraction):
   """
   Maximum Entropy Inverse Reinforcement Learning (Maxent IRL)
 
@@ -140,7 +138,7 @@ def deep_maxent_irl(feat_map, P_a, gamma, trajs, lr, n_iters):
   N_STATES, _, N_ACTIONS = np.shape(P_a)
 
   # init nn model
-  nn_r = DeepIRLFC(feat_map.shape[1], lr, 3, 3)
+  nn_r = DeepIRLFC(feat_map.shape[1], lr, 3, 3, gpu_fraction)
 
   # find state visitation frequencies using demonstrations
   mu_D = demo_svf(trajs, N_STATES)
@@ -167,10 +165,23 @@ def deep_maxent_irl(feat_map, P_a, gamma, trajs, lr, n_iters):
     
 
   rewards = nn_r.get_rewards(feat_map)
+  print "rewards: ", rewards
+  center_rewards = rewards - rewards.mean()
+  print "rewards reduce mean: ", center_rewards
+  # print "gaussian normalize rewards: ", rewards - rewards.mean()
+  norm_rewards = normalize(rewards)
+  print "normalize rewards: ", norm_rewards
+  norm2_rewards = (rewards - rewards.mean()) / rewards.std()
+  print "normalize2 rewards: ", norm2_rewards
+  sigmoid_center_rewards = 1 / (1 + np.exp(-center_rewards))
+  print "sigmoid rewards: ", sigmoid_center_rewards
+  sigmoid_norm2_rewards = 1 / (1 + np.exp(-norm2_rewards))
+  print "sigmoid norm2 rewards: ", sigmoid_norm2_rewards
   # return sigmoid(normalize(rewards))
-  return normalize(rewards)
-
-
+  # return normalize(rewards)
+  # return sigmoid_norm2_rewards
+  # return sigmoid_center_rewards
+  return norm_rewards
 
 
 

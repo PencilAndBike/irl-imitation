@@ -3,21 +3,22 @@ import matplotlib.pyplot as plt
 import argparse
 from collections import namedtuple
 
-
 import img_utils
 from mdp import gridworld
 from mdp import value_iteration
 from deep_maxent_irl import *
 from maxent_irl import *
 from utils import *
-from lp_irl import *
+# from lp_irl import *
+import os
+import time
+import logging
 
 Step = namedtuple('Step','cur_state action next_state reward done')
 
-
 PARSER = argparse.ArgumentParser(description=None)
-PARSER.add_argument('-hei', '--height', default=5, type=int, help='height of the gridworld')
-PARSER.add_argument('-wid', '--width', default=5, type=int, help='width of the gridworld')
+PARSER.add_argument('-hei', '--height', default=100, type=int, help='height of the gridworld')
+PARSER.add_argument('-wid', '--width', default=100, type=int, help='width of the gridworld')
 PARSER.add_argument('-g', '--gamma', default=0.9, type=float, help='discount factor')
 PARSER.add_argument('-a', '--act_random', default=0.3, type=float, help='probability of acting randomly')
 PARSER.add_argument('-t', '--n_trajs', default=200, type=int, help='number of expert trajectories')
@@ -27,6 +28,11 @@ PARSER.add_argument('--no-rand_start', dest='rand_start',action='store_false', h
 PARSER.set_defaults(rand_start=True)
 PARSER.add_argument('-lr', '--learning_rate', default=0.02, type=float, help='learning rate')
 PARSER.add_argument('-ni', '--n_iters', default=20, type=int, help='number of iterations')
+PARSER.add_argument('-sd', '--save_dir', default="./exps", type=str, help='save dir')
+PARSER.add_argument('-name', '--exp_name', default="gw", type=str, help='experiment name')
+PARSER.add_argument('-n_exp', '--n_exp', default=20, type=int, help='repeat experiment n times')
+PARSER.add_argument('-gpu_frac', '--gpu_fraction', default=0.2, type=float, help='gpu fraction')
+PARSER.add_argument('-term', '--terminal', default=False, type=bool, help='terminal or not when agent reach the goal')
 ARGS = PARSER.parse_args()
 print ARGS
 
@@ -41,81 +47,90 @@ L_TRAJ = ARGS.l_traj
 RAND_START = ARGS.rand_start
 LEARNING_RATE = ARGS.learning_rate
 N_ITERS = ARGS.n_iters
+SAVE_DIR = ARGS.save_dir
+EXP_NAME = ARGS.exp_name
+N_EXP = ARGS.n_exp
+GPU_FRACTION = ARGS.gpu_fraction
+TERMINAL = ARGS.terminal
 
+class GWExperiment(object):
+  def __init__(self, gamma=0.9, act_rand=0.3, r_max=1, h=10, w=10, n_trajs=100, l_traj=20, rand_start=True,
+               learning_rate=0.02, n_iters=20, save_dir="./exps", exp_name="gw_"+str(int(time.time())),
+               n_exp=20, feat_map=None, gpu_fraction=0.2, terminal=True):
+    self._gamma, self._act_rand, self._r_max, self._h, self._w, self._n_trajs, self._l_traj, self._rand_start, \
+    self._learning_rate, self._n_iters, self._save_dir, self._exp_name, self._n_exp = \
+      gamma, act_rand, r_max, h, w, n_trajs, l_traj, rand_start, learning_rate, n_iters, save_dir, exp_name, n_exp
+    self._exp_result_path = save_dir + "/" + exp_name
+    if not os.path.exists(self._exp_result_path):
+      os.makedirs(self._exp_result_path)
+    else:
+      logging.warning(self._exp_result_path + " has existed")
+      exit()
+    rmap_gt = np.zeros([h, w])
+    rmap_gt[h-1, w-1] = rmap_gt[0, w-1] = rmap_gt[h-1, 0] = r_max
+    if terminal:
+      self._gw = gridworld.GridWorld(rmap_gt, {(h-1, w-1), (0, w-1), (h-1, 0)}, 1 - ACT_RAND)
+    else:
+      self._gw = gridworld.GridWorld(rmap_gt, {}, 1 - ACT_RAND)
+    self._rewards_gt = np.reshape(rmap_gt, H*W, order='F')
+    self._P_a = self._gw.get_transition_mat()
+    self._values_gt, self._policy_gt = value_iteration.value_iteration(self._P_a, self._rewards_gt, GAMMA, error=0.01,
+                                                                       deterministic=True)
+    self.save_plt("gt", (3*w, h), self._rewards_gt, self._values_gt, self._policy_gt)
+    self._demo_trajs = self.generate_demonstrations()
+    self._feat_map = np.eye(h*w) if feat_map is None else feat_map
+    self._gpu_fraction = gpu_fraction
+    
+  def save_plt(self, name, figsize, rewards, values, policy):
+    plt.figure(figsize=figsize)
+    plt.subplot(1,3,1)
+    img_utils.heatmap2d(np.reshape(rewards, (self._h, self._w), order='F'), 'Rewards Map', block=False)
+    plt.subplot(1,3,2)
+    img_utils.heatmap2d(np.reshape(values, (self._h, self._w), order='F'), 'Value Map', block=False)
+    plt.subplot(1,3,3)
+    img_utils.heatmap2d(np.reshape(policy, (self._h, self._w), order='F'), 'Policy Map', block=False)
+    plt.savefig(self._exp_result_path+"/"+name+".png")
+    plt.close()
 
-def generate_demonstrations(gw, policy, n_trajs=100, len_traj=20, rand_start=False, start_pos=[0,0]):
-  """gatheres expert demonstrations
-
-  inputs:
-  gw          Gridworld - the environment
-  policy      Nx1 matrix
-  n_trajs     int - number of trajectories to generate
-  rand_start  bool - randomly picking start position or not
-  start_pos   2x1 list - set start position, default [0,0]
-  returns:
-  trajs       a list of trajectories - each element in the list is a list of Steps representing an episode
-  """
-
-  trajs = []
-  for i in range(n_trajs):
-    if rand_start:
-      # override start_pos
-      start_pos = [np.random.randint(0, gw.height), np.random.randint(0, gw.width)]
-
-    episode = []
-    gw.reset(start_pos)
-    cur_state = start_pos
-    cur_state, action, next_state, reward, is_done = gw.step(int(policy[gw.pos2idx(cur_state)]))
-    episode.append(Step(cur_state=gw.pos2idx(cur_state), action=action, next_state=gw.pos2idx(next_state), reward=reward, done=is_done))
-    # while not is_done:
-    for _ in range(len_traj):
-        cur_state, action, next_state, reward, is_done = gw.step(int(policy[gw.pos2idx(cur_state)]))
-        episode.append(Step(cur_state=gw.pos2idx(cur_state), action=action, next_state=gw.pos2idx(next_state), reward=reward, done=is_done))
+  def generate_demonstrations(self):
+    trajs = []
+    for i in range(self._n_trajs):
+      if self._rand_start:
+        # override start_pos
+        start_pos = [np.random.randint(0, self._h), np.random.randint(0, self._w)]
+      episode = []
+      self._gw.reset(start_pos)
+      cur_state = start_pos
+      cur_state, action, next_state, reward, is_done = self._gw.step(int(self._policy_gt[self._gw.pos2idx(cur_state)]))
+      episode.append(
+        Step(cur_state=self._gw.pos2idx(cur_state), action=action, next_state=self._gw.pos2idx(next_state), reward=reward,
+             done=is_done))
+      # while not is_done:
+      for _ in range(self._l_traj):
+        cur_state, action, next_state, reward, is_done = self._gw.step(int(self._policy_gt[self._gw.pos2idx(cur_state)]))
+        episode.append(
+          Step(cur_state=self._gw.pos2idx(cur_state), action=action, next_state=self._gw.pos2idx(next_state), reward=reward,
+               done=is_done))
         if is_done:
-            break
-    trajs.append(episode)
-  return trajs
-
-
-def main():
-  N_STATES = H * W
-  N_ACTIONS = 5
-
-  rmap_gt = np.zeros([H, W])
-  rmap_gt[H-1, W-1] = R_MAX
-  rmap_gt[0, W-1] = R_MAX
-  rmap_gt[H-1, 0] = R_MAX
-
-  gw = gridworld.GridWorld(rmap_gt, {}, 1 - ACT_RAND)
-
-  rewards_gt = np.reshape(rmap_gt, H*W, order='F')
-  P_a = gw.get_transition_mat()
-
-  values_gt, policy_gt = value_iteration.value_iteration(P_a, rewards_gt, GAMMA, error=0.01, deterministic=True)
+          break
+      trajs.append(episode)
+    return trajs
   
-  # use identity matrix as feature
-  feat_map = np.eye(N_STATES)
+  def test_once(self, exp_id):
+    tf.reset_default_graph()
+    print 'Deep Max Ent IRL training ..'
+    rewards = deep_maxent_irl(self._feat_map, self._P_a, GAMMA, self._demo_trajs, self._learning_rate, self._n_iters,
+                              self._gpu_fraction)
+    values, policy = value_iteration.value_iteration(self._P_a, rewards, self._gamma, error=0.01, deterministic=True)
+    # plots
+    self.save_plt(exp_id, (3*self._w, self._h), rewards, values, policy)
 
-  trajs = generate_demonstrations(gw, policy_gt, n_trajs=N_TRAJS, len_traj=L_TRAJ, rand_start=RAND_START)
-  
-  print 'Deep Max Ent IRL training ..'
-  rewards = deep_maxent_irl(feat_map, P_a, GAMMA, trajs, LEARNING_RATE, N_ITERS)
-
-  values, _ = value_iteration.value_iteration(P_a, rewards, GAMMA, error=0.01, deterministic=True)
-  # plots
-  plt.figure(figsize=(20,4))
-  plt.subplot(1, 4, 1)
-  img_utils.heatmap2d(np.reshape(rewards_gt, (H,W), order='F'), 'Rewards Map - Ground Truth', block=False)
-  plt.subplot(1, 4, 2)
-  img_utils.heatmap2d(np.reshape(values_gt, (H,W), order='F'), 'Value Map - Ground Truth', block=False)
-  plt.subplot(1, 4, 3)
-  img_utils.heatmap2d(np.reshape(rewards, (H,W), order='F'), 'Reward Map - Recovered', block=False)
-  plt.subplot(1, 4, 4)
-  img_utils.heatmap2d(np.reshape(values, (H,W), order='F'), 'Value Map - Recovered', block=False)
-  plt.show()
-
-
+  def test_n_times(self, n):
+    for i in range(n):
+      self.test_once(str(i))
 
 
 if __name__ == "__main__":
-  main()
+  gwExperiment = GWExperiment(GAMMA, ACT_RAND, R_MAX, H, W, N_TRAJS, L_TRAJ, RAND_START, LEARNING_RATE,
+                              N_ITERS, SAVE_DIR, EXP_NAME, N_EXP)
+  gwExperiment.test_n_times(20)
