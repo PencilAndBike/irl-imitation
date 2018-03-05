@@ -52,6 +52,7 @@ EXP_NAME = ARGS.exp_name
 N_EXP = ARGS.n_exp
 GPU_FRACTION = ARGS.gpu_fraction
 TERMINAL = ARGS.terminal
+N_STATES = H * W
 
 class GWExperiment(object):
   def __init__(self, gamma=0.9, act_rand=0.3, r_max=1, h=10, w=10, n_trajs=100, l_traj=20, rand_start=True,
@@ -60,12 +61,15 @@ class GWExperiment(object):
     self._gamma, self._act_rand, self._r_max, self._h, self._w, self._n_trajs, self._l_traj, self._rand_start, \
     self._learning_rate, self._n_iters, self._save_dir, self._exp_name, self._n_exp = \
       gamma, act_rand, r_max, h, w, n_trajs, l_traj, rand_start, learning_rate, n_iters, save_dir, exp_name, n_exp
-    self._exp_result_path = save_dir + "/" + exp_name
-    if not os.path.exists(self._exp_result_path):
-      os.makedirs(self._exp_result_path)
-    else:
-      logging.warning(self._exp_result_path + " has existed")
-      exit()
+    save_dir_exp = save_dir+"/"+exp_name
+    if not os.path.exists(save_dir_exp):
+      os.makedirs(save_dir_exp)
+    # else:
+    #   logging.warning(save_dir_exp)
+    #   exit()
+    n = len(filter(lambda x: '.' not in x, os.listdir(save_dir_exp)))
+    self._exp_result_path = save_dir_exp+"/"+str(n+1)
+    os.makedirs(self._exp_result_path)
     rmap_gt = np.zeros([h, w])
     rmap_gt[h-1, w-1] = rmap_gt[0, w-1] = rmap_gt[h-1, 0] = r_max
     if terminal:
@@ -73,6 +77,7 @@ class GWExperiment(object):
     else:
       self._gw = gridworld.GridWorld(rmap_gt, {}, 1 - ACT_RAND)
     self._rewards_gt = np.reshape(rmap_gt, H*W, order='F')
+    print "rewards gt: ", self._rewards_gt
     self._P_a = self._gw.get_transition_mat()
     ts = time.time()
     self._values_gt, self._policy_gt = value_iteration.value_iteration(self._P_a, self._rewards_gt, GAMMA, error=0.01,
@@ -84,7 +89,7 @@ class GWExperiment(object):
     te = time.time()
     print "saving plt time: ", te-ts
     self._demo_trajs = self.generate_demonstrations()
-    self._feat_map = np.eye(h*w) if feat_map is None else feat_map
+    self._feat_map = rmap_gt.reshape(h, w, 1) if feat_map is None else feat_map
     self._gpu_fraction = gpu_fraction
     
   def save_plt(self, name, figsize, rewards, values, policy):
@@ -112,6 +117,7 @@ class GWExperiment(object):
         Step(cur_state=self._gw.pos2idx(cur_state), action=action, next_state=self._gw.pos2idx(next_state), reward=reward,
              done=is_done))
       # while not is_done:
+      cur_state = next_state
       for _ in range(self._l_traj):
         cur_state, action, next_state, reward, is_done = self._gw.step(int(self._policy_gt[self._gw.pos2idx(cur_state)]))
         episode.append(
@@ -119,6 +125,7 @@ class GWExperiment(object):
                done=is_done))
         if is_done:
           break
+        cur_state = next_state
       trajs.append(episode)
     return trajs
   
@@ -128,6 +135,7 @@ class GWExperiment(object):
     ts = time.time()
     rewards = deep_maxent_irl(self._feat_map, self._P_a, GAMMA, self._demo_trajs, self._learning_rate, self._n_iters,
                               self._gpu_fraction)
+    print "rewards recovered: ", rewards
     te = time.time()
     print 'IRL time: ', te-ts
     ts = time.time()
@@ -146,6 +154,7 @@ class GWExperiment(object):
 
 
 if __name__ == "__main__":
+  print TERMINAL
   gwExperiment = GWExperiment(GAMMA, ACT_RAND, R_MAX, H, W, N_TRAJS, L_TRAJ, RAND_START, LEARNING_RATE,
-                              N_ITERS, SAVE_DIR, EXP_NAME, N_EXP)
+                              N_ITERS, SAVE_DIR, EXP_NAME, N_EXP, feat_map=np.eye(N_STATES), terminal=TERMINAL)
   gwExperiment.test_n_times(20)
