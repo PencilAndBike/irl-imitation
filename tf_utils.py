@@ -29,6 +29,9 @@ def conv2d(x, n_kernel, k_sz, stride=1):
   """
   W = tf.Variable(tf.random_normal([k_sz[0], k_sz[1], int(x.get_shape()[3]), n_kernel]))
   b = tf.Variable(tf.random_normal([n_kernel]))
+  
+  # W = tf.Variable(tf.ones([k_sz[0], k_sz[1], int(x.get_shape()[3]), n_kernel]))
+  # b = tf.Variable(tf.zeros([n_kernel]))
   # - strides[0] and strides[1] must be 1
   # - padding can be 'VALID'(without padding) or 'SAME'(zero padding)
   #     - http://stackoverflow.com/questions/37674306/what-is-the-difference-between-same-and-valid-padding-in-tf-nn-max-pool-of-t
