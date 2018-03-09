@@ -17,8 +17,8 @@ import logging
 Step = namedtuple('Step','cur_state action next_state reward done')
 
 PARSER = argparse.ArgumentParser(description=None)
-PARSER.add_argument('-hei', '--height', default=5, type=int, help='height of the gridworld')
-PARSER.add_argument('-wid', '--width', default=5, type=int, help='width of the gridworld')
+PARSER.add_argument('-hei', '--height', default=10, type=int, help='height of the gridworld')
+PARSER.add_argument('-wid', '--width', default=10, type=int, help='width of the gridworld')
 PARSER.add_argument('-g', '--gamma', default=0.9, type=float, help='discount factor')
 PARSER.add_argument('-a', '--act_random', default=0.3, type=float, help='probability of acting randomly')
 PARSER.add_argument('-t', '--n_trajs', default=200, type=int, help='number of expert trajectories')
@@ -27,9 +27,9 @@ PARSER.add_argument('--rand_start', dest='rand_start', action='store_true', help
 PARSER.add_argument('--no-rand_start', dest='rand_start',action='store_false', help='when sampling trajectories, fix start positions')
 PARSER.set_defaults(rand_start=True)
 PARSER.add_argument('-lr', '--learning_rate', default=0.02, type=float, help='learning rate')
-PARSER.add_argument('-ni', '--n_iters', default=10, type=int, help='number of iterations')
+PARSER.add_argument('-ni', '--n_iters', default=50, type=int, help='number of iterations')
 PARSER.add_argument('-sd', '--save_dir', default="./exps", type=str, help='save dir')
-PARSER.add_argument('-name', '--exp_name', default="gw5_test_fcn", type=str, help='experiment name')
+PARSER.add_argument('-name', '--exp_name', default="gw10_fcn", type=str, help='experiment name')
 PARSER.add_argument('-n_exp', '--n_exp', default=20, type=int, help='repeat experiment n times')
 PARSER.add_argument('-gpu_frac', '--gpu_fraction', default=0.2, type=float, help='gpu fraction')
 PARSER.add_argument('-term', '--terminal', default=False, type=bool, help='terminal or not when agent reach the goal')
@@ -86,7 +86,7 @@ class GWExperiment(object):
     self.save_plt("gt", (3*w, h), self._rewards_gt, self._values_gt, self._policy_gt)
     te = time.time()
     print "saving plt time: ", te-ts
-    self._demo_trajs = self.generate_trajs(self._policy_gt)
+    self._demo_trajs = self.generate_demonstrations()
     self._feat_map = rmap_gt.reshape((h,w,1)) if feat_map is None else feat_map
     self._gpu_fraction = gpu_fraction
     
@@ -101,31 +101,7 @@ class GWExperiment(object):
     plt.savefig(self._exp_result_path+"/"+name+".png")
     plt.close()
 
-  # def generate_demonstrations(self):
-  #   trajs = []
-  #   for i in range(self._n_trajs):
-  #     if self._rand_start:
-  #       # override start_pos
-  #       start_pos = [np.random.randint(0, self._h), np.random.randint(0, self._w)]
-  #     episode = []
-  #     self._gw.reset(start_pos)
-  #     cur_state = start_pos
-  #     cur_state, action, next_state, reward, is_done = self._gw.step(int(self._policy_gt[self._gw.pos2idx(cur_state)]))
-  #     episode.append(
-  #       Step(cur_state=self._gw.pos2idx(cur_state), action=action, next_state=self._gw.pos2idx(next_state), reward=reward,
-  #            done=is_done))
-  #     # while not is_done:
-  #     for _ in range(self._l_traj):
-  #       cur_state, action, next_state, reward, is_done = self._gw.step(int(self._policy_gt[self._gw.pos2idx(cur_state)]))
-  #       episode.append(
-  #         Step(cur_state=self._gw.pos2idx(cur_state), action=action, next_state=self._gw.pos2idx(next_state), reward=reward,
-  #              done=is_done))
-  #       if is_done:
-  #         break
-  #     trajs.append(episode)
-  #   return trajs
-  
-  def generate_trajs(self, policy):
+  def generate_demonstrations(self):
     trajs = []
     for i in range(self._n_trajs):
       if self._rand_start:
@@ -134,20 +110,46 @@ class GWExperiment(object):
       episode = []
       self._gw.reset(start_pos)
       cur_state = start_pos
-      cur_state, action, next_state, reward, is_done = self._gw.step(int(policy[self._gw.pos2idx(cur_state)]))
+      cur_state, action, next_state, reward, is_done = self._gw.step(int(self._policy_gt[self._gw.pos2idx(cur_state)]))
       episode.append(
         Step(cur_state=self._gw.pos2idx(cur_state), action=action, next_state=self._gw.pos2idx(next_state), reward=reward,
              done=is_done))
       # while not is_done:
+      cur_state = next_state
       for _ in range(self._l_traj):
-        cur_state, action, next_state, reward, is_done = self._gw.step(int(policy[self._gw.pos2idx(cur_state)]))
+        cur_state, action, next_state, reward, is_done = self._gw.step(int(self._policy_gt[self._gw.pos2idx(cur_state)]))
         episode.append(
           Step(cur_state=self._gw.pos2idx(cur_state), action=action, next_state=self._gw.pos2idx(next_state), reward=reward,
                done=is_done))
         if is_done:
           break
+        cur_state = next_state
       trajs.append(episode)
     return trajs
+  
+  # def generate_trajs(self, policy):
+  #   trajs = []
+  #   for i in range(self._n_trajs):
+  #     if self._rand_start:
+  #       # override start_pos
+  #       start_pos = [np.random.randint(0, self._h), np.random.randint(0, self._w)]
+  #     episode = []
+  #     self._gw.reset(start_pos)
+  #     cur_state = start_pos
+  #     cur_state, action, next_state, reward, is_done = self._gw.step(int(policy[self._gw.pos2idx(cur_state)]))
+  #     episode.append(
+  #       Step(cur_state=self._gw.pos2idx(cur_state), action=action, next_state=self._gw.pos2idx(next_state), reward=reward,
+  #            done=is_done))
+  #     # while not is_done:
+  #     for _ in range(self._l_traj):
+  #       cur_state, action, next_state, reward, is_done = self._gw.step(int(policy[self._gw.pos2idx(cur_state)]))
+  #       episode.append(
+  #         Step(cur_state=self._gw.pos2idx(cur_state), action=action, next_state=self._gw.pos2idx(next_state), reward=reward,
+  #              done=is_done))
+  #       if is_done:
+  #         break
+  #     trajs.append(episode)
+  #   return trajs
 
   def test_once(self, exp_id):
     tf.reset_default_graph()

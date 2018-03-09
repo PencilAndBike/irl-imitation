@@ -6,7 +6,6 @@ import img_utils
 import tf_utils
 from utils import *
 
-
 class FCNIRL:
   def __init__(self, input_shape, lr, n_h1=400, n_h2=300, l2=10, name='deep_irl_fc', gpu_fraction=0.2):
     # self.n_input = n_input
@@ -24,6 +23,8 @@ class FCNIRL:
     self.l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in self.theta])
     self.grad_l2 = tf.gradients(self.l2_loss, self.theta)
     
+    print "reward shape: ", self.reward.shape
+    print "grad shape: ", self.grad_r.shape
     self.grad_theta = tf.gradients(self.reward, self.theta, -self.grad_r)
     # apply l2 loss gradients
     self.grad_theta = [tf.add(l2 * self.grad_l2[i], self.grad_theta[i]) for i in range(len(self.grad_l2))]
@@ -44,10 +45,15 @@ class FCNIRL:
     #   reward = tf_utils.fc(fc2, 1, scope="reward")
     with tf.variable_scope(name):
       print "input_s shape: ", input_s.shape
-      reward = tf_utils.conv2d(input_s, 1, [1,1])
+      # reward = tf_utils.conv2d(input_s, 1, [1,1])
       # reward = tf_utils.conv2d(conv1, 1, [1,1])
-      # conv2 = tf_utils.conv2d(conv1, 16, [4,4])
-      # reward = tf_utils.conv2d(conv2, 1, [4,4])
+      conv1 = tf_utils.conv2d(input_s, 4, [2,2])
+      # reward = tf_utils.conv2d(conv1, 1, [1,1])
+      conv2 = tf_utils.conv2d(conv1, 1, [1,1])
+      conv3 = tf.concat([input_s, conv2], axis=-1)
+      reward = tf_utils.conv2d(conv3, 1, [1,1])
+      # conv2 = tf_utils.conv2d(conv1, 4, [2,2])
+      # reward = tf_utils.conv2d(conv1, 1, [2,2])
     theta = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=name)
     return input_s, reward, theta
   
@@ -90,23 +96,23 @@ def compute_state_visition_freq(P_a, gamma, trajs, policy, deterministic=True):
     mu[traj[0].cur_state, 0] += 1
   mu[:, 0] = mu[:, 0] / len(trajs)
   
-  # for s in range(N_STATES):
-  #   for t in range(T - 1):
-  #     if deterministic:
-  #       mu[s, t + 1] = sum([mu[pre_s, t] * P_a[pre_s, s, int(policy[pre_s])] for pre_s in range(N_STATES)])
-  #     else:
-  #       mu[s, t + 1] = sum(
-  #         [sum([mu[pre_s, t] * P_a[pre_s, s, a1] * policy[pre_s, a1] for a1 in range(N_ACTIONS)]) for pre_s in
-  #          range(N_STATES)])
-  
-  for t in range(T - 1):
-    for s in range(N_STATES):
+  for s in range(N_STATES):
+    for t in range(T - 1):
       if deterministic:
         mu[s, t + 1] = sum([mu[pre_s, t] * P_a[pre_s, s, int(policy[pre_s])] for pre_s in range(N_STATES)])
       else:
         mu[s, t + 1] = sum(
           [sum([mu[pre_s, t] * P_a[pre_s, s, a1] * policy[pre_s, a1] for a1 in range(N_ACTIONS)]) for pre_s in
            range(N_STATES)])
+  
+  # for t in range(T - 1):
+  #   for s in range(N_STATES):
+  #     if deterministic:
+  #       mu[s, t + 1] = sum([mu[pre_s, t] * P_a[pre_s, s, int(policy[pre_s])] for pre_s in range(N_STATES)])
+  #     else:
+  #       mu[s, t + 1] = sum(
+  #         [sum([mu[pre_s, t] * P_a[pre_s, s, a1] * policy[pre_s, a1] for a1 in range(N_ACTIONS)]) for pre_s in
+  #          range(N_STATES)])
   
   p = np.sum(mu, 1)
   return p
@@ -130,7 +136,27 @@ def demo_svf(trajs, n_states):
   return p
 
 
-def fcn_maxent_irl(feat_map, P_a, gamma, trajs, lr, n_iters, gpu_fraction):
+def demo_sparse_svf(traj, n_states):
+  # def idx2pos(idx):
+  #   return (idx % h, idx / h)
+  #
+  # traj_pos = []
+  # dis = []
+  # for s, a, ns, r, is_done in traj:
+  #   traj_pos.append(ns)
+  #
+  # for idx in range(n_states):
+  #   pos = idx2pos(idx)
+  #   for pos_on_traj in traj_pos:
+  #     dis.append(np.linalg.norm(np.array(pos)-np.array(pos_on_traj)))
+  p = np.zeros(n_states)
+  l = len(traj)
+  for i, step in enumerate(traj):
+    p[step.next_state] = (i+1.0)/l
+  return p
+  
+  
+def fcn_maxent_irl(feat_maps, P_as, gamma, trajs, lr, n_iters, gpu_fraction):
   """
   Maximum Entropy Inverse Reinforcement Learning (Maxent IRL)
 
@@ -148,74 +174,36 @@ def fcn_maxent_irl(feat_map, P_a, gamma, trajs, lr, n_iters, gpu_fraction):
     rewards     Nx1 vector - recoverred state rewards
   """
   
-  # tf.set_random_seed(1)
-  
-  N_STATES, _, N_ACTIONS = np.shape(P_a)
+  N_TRAJ, N_STATES, _, N_ACTIONS = np.shape(P_as)
   
   # init nn model
-  nn_r = FCNIRL(feat_map.shape[1:], lr, 3, 3, gpu_fraction)
+  nn_r = FCNIRL(feat_maps.shape[1:], lr, 3, 3, gpu_fraction)
   
-  # find state visitation frequencies using demonstrations
-  mu_D = demo_svf(trajs, N_STATES)
-  print "mu_D: ",  mu_D.reshape((feat_map.shape[1]*feat_map.shape[2], ))
-  
-  # training
-  for iteration in range(n_iters):
-    if iteration % (n_iters / 10) == 0:
-      print 'iteration: {}'.format(iteration)
+  for _ in range(n_iters):
+    grad_rs = []
+    for i in range(N_TRAJ):
+      feat_map, P_a, traj = feat_maps[i], P_as[i], trajs[i]
+      feat_map = np.array([feat_map])
+      mu_D = demo_sparse_svf(traj, N_STATES)
+      rewards = nn_r.get_rewards(feat_map)
+      rewards = np.reshape(rewards, feat_map.shape[1]*feat_map.shape[2], order='F')
+      _, policy = value_iteration.value_iteration(P_a, rewards, gamma, error=0.01, deterministic=True)
+      mu_exp = compute_state_visition_freq(P_a, gamma, [traj], policy, deterministic=True)
+      grad_r = mu_D - mu_exp
+      grad_r = np.reshape(grad_r, (feat_map.shape[1], feat_map.shape[2], 1), order='F')
+      grad_rs.append(grad_r)
+    grad_rs = np.array(grad_rs)
+    grad_theta, l2_loss, grad_norm = nn_r.apply_grads(feat_maps, grad_rs)
     
-    # compute the reward matrix
-    rewards = nn_r.get_rewards(feat_map)
-    # rewards = np.reshape(rewards, [-1, 1])
-    # print "rewards: ", rewards
-    # print "rewards shape: ", rewards.shape
-    # rewards = rewards[0][:,:,0]
-    rewards = np.reshape(rewards, feat_map.shape[1]*feat_map.shape[2], order='F')
-    # print "reshaped rewards: ", rewards
-    # compute policy
-    _, policy = value_iteration.value_iteration(P_a, rewards, gamma, error=0.01, deterministic=True)
-    
-    # compute expected svf
-    mu_exp = compute_state_visition_freq(P_a, gamma, trajs, policy, deterministic=True)
-    print "mu_exp: ", mu_exp.reshape((feat_map.shape[1]*feat_map.shape[2], ))
-    
-    # compute gradients on rewards:
-    grad_r = mu_D - mu_exp
-    # grad_r = np.repeat(grad_r, feat_map.shape[0]*feat_map.shape[1]).reshape((-1, feat_map.shape[0], feat_map.shape[1], 1))
-    # grad_r = grad_r.reshape((1, feat_map.shape[1], feat_map.shape[2], 1))
-    # print "grad_r: ", grad_r
-    grad_r = np.reshape(grad_r, (1, feat_map.shape[1], feat_map.shape[2], 1), order='F')
-    # grad_r = np.reshape(grad_r, (1, feat_map.shape[1], feat_map.shape[2], 1))
-    # print "grad_r shape: ", grad_r.shape
-    # print "reshaped grad_r: ", grad_r
-    # apply gradients to the neural network
-    grad_theta, l2_loss, grad_norm = nn_r.apply_grads(feat_map, grad_r)
-  
-  rewards = nn_r.get_rewards(feat_map)
-  
-  # rewards = np.zeros(feat_map.shape)
-  # rewards[0][feat_map.shape[1]-1][feat_map.shape[2]-1][0] = \
-  #   rewards[0][0][feat_map.shape[2]-1][0] = \
-  #   rewards[0][feat_map.shape[1]-1][0][0] = 1.0
-  
-  rewards = np.reshape(rewards, feat_map.shape[1] * feat_map.shape[2], order='F')
-  print "rewards: ", rewards
-  center_rewards = rewards - rewards.mean()
-  print "rewards reduce mean: ", center_rewards
-  # print "gaussian normalize rewards: ", rewards - rewards.mean()
-  norm_rewards = normalize(rewards)
-  print "normalize rewards: ", norm_rewards
-  # norm2_rewards = (rewards - rewards.mean()) / rewards.std()
-  # print "normalize2 rewards: ", norm2_rewards
-  # sigmoid_center_rewards = 1 / (1 + np.exp(-center_rewards))
-  # print "sigmoid rewards: ", sigmoid_center_rewards
-  # sigmoid_norm2_rewards = 1 / (1 + np.exp(-norm2_rewards))
-  # print "sigmoid norm2 rewards: ", sigmoid_norm2_rewards
-  # return sigmoid(normalize(rewards))
-  # return normalize(rewards)
-  # return sigmoid_norm2_rewards
-  # return sigmoid_center_rewards
-  return norm_rewards
-
-
-
+  rewards = nn_r.get_rewards(feat_maps)
+  n_rewards = []
+  for reward, feat_map in zip(rewards, feat_maps):
+    n_rewards.append(np.reshape(reward, feat_map.shape[0]*feat_map.shape[1], order='F'))
+  # rewards = np.reshape(rewards, feat_map.shape[0]*feat_map.shape[1], order='F')
+  # norm_rewards = []
+  # for reward, feat_map in zip(rewards, feat_maps):
+  #   reward = np.reshape(reward, feat_map.shape[0] * feat_map.shape[1], order='F')
+  #   norm_reward = normalize(reward)
+  #   norm_rewards.append(norm_reward)
+  # return norm_rewards
+  return n_rewards
