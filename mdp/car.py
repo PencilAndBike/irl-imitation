@@ -5,7 +5,7 @@ import tensorflow as tf
 import random
 
 Step = namedtuple('Step', 'pos next_pos reward')
-MTraj = namedtuple('MTraj', 'img traj')
+MTraj = namedtuple('MTraj', 'id img traj')
 # MTraj = namedtuple('MTraj', 'stacking_state_map traj')
 
 # def discrete(img, pos, next_pos):
@@ -211,12 +211,12 @@ class Car(object):
   #   disc_traj = LinkAndDiscTraj(traj=traj).discrete()
   #   return MTraj(img, disc_traj)
   
-  def get_demo_trajs(self, n):
-    imgs = []
-    trajs = []
-    for _ in range(n):
-      mtraj = self.rand_traj()
-      imgs.append(mtraj.img)
-      trajs.append(mtraj.traj)
-    return imgs, trajs
-
+  # def get_demo_trajs(self, n):
+  #   imgs = []
+  #   trajs = []
+  #   for _ in range(n):
+  #     mtraj = self.rand_traj()
+  #     imgs.append(mtraj.img)
+  #     trajs.append(mtraj.traj)
+  #   return imgs, trajs
+  #

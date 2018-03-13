@@ -12,23 +12,26 @@ import os
 import time
 import logging
 from mdp.img_process import ProcessCarImg
+import cv2
 
 Step = namedtuple('Step','cur_state action next_state reward done')
 
 PARSER = argparse.ArgumentParser(description=None)
-PARSER.add_argument('-hei', '--height', default=10, type=int, help='height of the grid map')
-PARSER.add_argument('-wid', '--width', default=10, type=int, help='width of the grid map')
+PARSER.add_argument('-hei', '--height', default=8, type=int, help='height of the grid map')
+PARSER.add_argument('-wid', '--width', default=8, type=int, help='width of the grid map')
+PARSER.add_argument('-img_hei', '--img_height', default=256, type=int, help='height of the img')
+PARSER.add_argument('-img_wid', '--img_width', default=256, type=int, help='width of the img')
 PARSER.add_argument('-g', '--gamma', default=0.9, type=float, help='discount factor')
-PARSER.add_argument('-nd', '--n_demos', default=5, type=int, help='number of expert trajectories')
-PARSER.add_argument('-lp', '--l_pos', default=6, type=int, help='length of concated positions')
-PARSER.add_argument('-lt', '--l_traj', default=3, type=int, help='length of discrete trajectory')
+PARSER.add_argument('-nd', '--n_demos', default=1, type=int, help='number of expert trajectories')
+PARSER.add_argument('-lp', '--l_pos', default=7, type=int, help='length of concated positions')
+PARSER.add_argument('-lt', '--l_traj', default=4, type=int, help='length of discrete trajectory')
 PARSER.add_argument('-lr', '--learning_rate', default=0.02, type=float, help='learning rate')
-PARSER.add_argument('-ni', '--n_iters', default=30, type=int, help='number of iterations')
-PARSER.add_argument('-rd', '--record_dir', default="/home/pirate03/Downloads/prediction_data_for_test", type=str, \
+PARSER.add_argument('-ni', '--n_iters', default=20, type=int, help='number of iterations')
+PARSER.add_argument('-rd', '--record_dir', default="/home/pirate03/Downloads/prediction_data/crop256_for_test", type=str, \
                     help='recording data dir')
 PARSER.add_argument('-name', '--exp_name', default="gw10_fcn_sparse_feed", type=str, help='experiment name')
 PARSER.add_argument('-n_exp', '--n_exp', default=20, type=int, help='repeat experiment n times')
-PARSER.add_argument('-gpu_frac', '--gpu_fraction', default=0.2, type=float, help='gpu fraction')
+PARSER.add_argument('-gpu_frac', '--gpu_fraction', default=0.4, type=float, help='gpu fraction')
 PARSER.add_argument('-term', '--terminal', default=True, type=bool, help='terminal or not when agent reach the goal')
 ARGS = PARSER.parse_args()
 print ARGS
@@ -37,6 +40,8 @@ print ARGS
 GAMMA = ARGS.gamma
 H = ARGS.height
 W = ARGS.width
+IH = ARGS.img_height
+IW = ARGS.img_width
 N_DEMOS = ARGS.n_demos
 L_POS = ARGS.l_pos
 L_TRAJ = ARGS.l_traj
@@ -108,25 +113,32 @@ class CarIRLExp(object):
     idx_traj = []
     for disc_pos in disc_traj:
       idx_traj.append(self._car.pos2idx(disc_pos))
-    return MTraj(img, idx_traj)
+    return MTraj(i, img, idx_traj)
     # return MTraj(img, disc_traj)
 
   def get_demo_trajs(self, n):
+    ids = []
     feat_maps = []
     trajs = []
     for _ in range(n):
       mtraj = self.rand_traj()
+      ids.append(mtraj.id)
       feat_maps.append(mtraj.img)
       trajs.append(mtraj.traj)
-    return np.array(feat_maps), np.array(trajs)
+    return np.array(ids), np.array(feat_maps), np.array(trajs)
 
-  def save_plt(self, name, figsize, rewards, values, policy):
+  def save_plt(self, name, figsize, traj, rewards, values, policy):
     plt.figure(figsize=figsize)
-    plt.subplot(1,3,1)
+    x = np.zeros((self._h, self._w))
+    for idx in traj:
+      x[self._car.idx2pos(idx)] = 1.0
+    plt.subplot(1,4,1)
+    img_utils.heatmap2d(x, 'Traj', block=False)
+    plt.subplot(1,4,2)
     img_utils.heatmap2d(np.reshape(rewards, (self._h, self._w), order='F'), 'Rewards Map', block=False)
-    plt.subplot(1,3,2)
+    plt.subplot(1,4,3)
     img_utils.heatmap2d(np.reshape(values, (self._h, self._w), order='F'), 'Value Map', block=False)
-    plt.subplot(1,3,3)
+    plt.subplot(1,4,4)
     img_utils.heatmap2d(np.reshape(policy, (self._h, self._w), order='F'), 'Policy Map', block=False)
     plt.savefig(self._exp_result_path+"/"+name+".png")
     plt.close()
@@ -157,26 +169,28 @@ class CarIRLExp(object):
     for traj in trajs:
       step_wraped_trajs.append(self.wrap(traj))
     return step_wraped_trajs
-
-  
+    
   def test_once(self, exp_id=None):
+    os.mkdir(self._exp_result_path+'/'+exp_id)
     print "getting demo trajs..."
-    feat_maps, demo_trajs = self.get_demo_trajs(self._n_demos)
+    ids, feat_maps, demo_trajs = self.get_demo_trajs(self._n_demos)
     print "got demo trajs"
-    demo_trajs = self.shorten_trajs(demo_trajs)
-    demo_trajs = self.wrap_trajs(demo_trajs)
+    shortened_trajs = self.shorten_trajs(demo_trajs)
+    wraped_trajs = self.wrap_trajs(shortened_trajs)
     P_as = [self._P_a] * self._n_demos
     print "Run fcn_maxent_irl..."
-    rewards = fcn_maxent_irl(feat_maps, np.array([self._h, self._w]), P_as, self._gamma, demo_trajs, self._learning_rate, self._n_iters, self._gpu_fraction)
+    rewards = fcn_maxent_irl(feat_maps, np.array([self._h, self._w]), P_as, self._gamma, wraped_trajs,
+                             self._learning_rate, self._n_iters, self._gpu_fraction)
     print "fcn_maxent_irl is done"
     for i in range(self._n_demos):
       print "run demo {}".format(i)
       P_a = P_as[i]
       reward = rewards[i]
       value, policy = value_iteration.value_iteration(P_a, reward, self._gamma, error=0.01, deterministic=True)
-      self.save_plt(exp_id+'/'+str(i), (3 * self._w, self._h), reward, value, policy)
+      cv2.imwrite(self._exp_result_path+"/"+exp_id+'/'+str(i)+'_'+str(ids[i])+".png", feat_maps[i])
+      self.save_plt(exp_id+'/'+str(i), (4 * self._w, self._h), demo_trajs[i], reward, value, policy)
 
     
 if __name__ == "__main__":
-  car_irl_exp = CarIRLExp(L_POS, L_TRAJ, N_DEMOS, RECORD_DIR, h=H, w=W, img_h=500, img_w=500)
-  car_irl_exp.test_once()
+  car_irl_exp = CarIRLExp(L_POS, L_TRAJ, N_DEMOS, RECORD_DIR, n_iters=N_ITERS, h=H, w=W, img_h=IH, img_w=IW)
+  car_irl_exp.test_once('1')

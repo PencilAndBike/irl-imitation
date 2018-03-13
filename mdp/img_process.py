@@ -60,9 +60,11 @@ class ProcessCarImg(object):
     ego_imgs = ProcessCarImg.read_imgs(self._ego_dir)
     lin_imgs = ProcessCarImg.read_imgs(self._lin_dir)
     obs_imgs = ProcessCarImg.read_imgs(self._obs_dir)
+    mix_imgs = ProcessCarImg.read_imgs(self._mix_dir)
     return self.crop_imgs(ego_imgs, cent_h, cent_w), \
            self.crop_imgs(lin_imgs, cent_h, cent_w), \
-           self.crop_imgs(obs_imgs, cent_h, cent_w)
+           self.crop_imgs(obs_imgs, cent_h, cent_w), \
+           self.crop_imgs(mix_imgs, cent_h, cent_w)
   
   def save_imgs(self, imgs, name):
     save_path = self._f_dir+'/'+name
@@ -74,11 +76,12 @@ class ProcessCarImg(object):
       cv2.imwrite(save_path+'/'+str(i)+'.png', img)
   
   
-  def save_crop(self, cent_h=120, cent_w=120):
-    crop_ego_imgs, crop_lin_imgs, crop_obs_imgs = self.crop(cent_h, cent_w)
+  def save_crop(self, cent_h=200, cent_w=200):
+    crop_ego_imgs, crop_lin_imgs, crop_obs_imgs, crop_mix_imgs = self.crop(cent_h, cent_w)
     self.save_imgs(crop_ego_imgs, 'crop_ego')
     self.save_imgs(crop_lin_imgs, 'crop_lin')
     self.save_imgs(crop_obs_imgs, 'crop_obs')
+    self.save_imgs(crop_mix_imgs, 'crop_mix')
     
   def resize(self, img_dir, size=(20,20)):
     imgs = self.read_imgs(img_dir)
@@ -102,7 +105,8 @@ class ProcessCarImg(object):
 if __name__ == '__main__':
   f_dir = '/home/pirate03/Downloads/prediction_data'
   pci = ProcessCarImg(f_dir)
-  pci.save_resize((20,20))
+  pci.save_crop(cent_h=256, cent_w=256)
+  # pci.save_resize((20,20))
   # mix_imgs = pci.read_imgs(f_dir+'/mix')
   # mix_imgs = pci.crop_imgs(mix_imgs, 120, 120)
   # pci.save_imgs(mix_imgs, 'crop_mix')

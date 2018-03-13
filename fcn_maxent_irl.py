@@ -48,8 +48,8 @@ class FCNIRL:
       print "input_s shape: ", input_s.shape
       # reward = tf_utils.conv2d(input_s, 1, [1,1])
       # reward = tf_utils.conv2d(conv1, 1, [1,1])
-      conv = tf_utils.conv2d(input_s, 32, [5,5], stride=5)
-      conv = tf_utils.conv2d(conv, 32, [5,5], stride=5)
+      conv = tf_utils.conv2d(input_s, 32, [4,4], stride=4)
+      conv = tf_utils.conv2d(conv, 32, [4,4], stride=4)
       conv = tf_utils.conv2d(conv, 16, [2,2], stride=2)
       conv = tf_utils.conv2d(conv, 16, [2,2])
       reward = tf_utils.conv2d(conv, 1, [1,1])
@@ -205,8 +205,10 @@ def fcn_maxent_irl(feat_maps, out_shape, P_as, gamma, trajs, lr, n_iters, gpu_fr
     
   rewards = nn_r.get_rewards(feat_maps)
   n_rewards = []
-  for reward, feat_map in zip(rewards, feat_maps):
-    n_rewards.append(np.reshape(reward, feat_map.shape[0]*feat_map.shape[1], order='F'))
+  # for reward, feat_map in zip(rewards, feat_maps):
+  #   n_rewards.append(np.reshape(reward, feat_map.shape[0]*feat_map.shape[1], order='F'))
+  for reward in rewards:
+    n_rewards.append(np.reshape(reward, out_shape[0]*out_shape[1], order='F'))
   # rewards = np.reshape(rewards, feat_map.shape[0]*feat_map.shape[1], order='F')
   # norm_rewards = []
   # for reward, feat_map in zip(rewards, feat_maps):
