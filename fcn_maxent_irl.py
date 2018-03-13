@@ -7,9 +7,10 @@ import tf_utils
 from utils import *
 
 class FCNIRL:
-  def __init__(self, input_shape, lr, n_h1=400, n_h2=300, l2=10, name='deep_irl_fc', gpu_fraction=0.2):
+  def __init__(self, input_shape, out_shape, lr, n_h1=400, n_h2=300, l2=10, name='deep_irl_fc', gpu_fraction=0.2):
     # self.n_input = n_input
     self.input_shape = input_shape
+    self.out_shape = out_shape
     self.lr = lr
     self.n_h1 = n_h1
     self.n_h2 = n_h2
@@ -19,7 +20,7 @@ class FCNIRL:
     self.input_s, self.reward, self.theta = self._build_network(self.name)
     self.optimizer = tf.train.GradientDescentOptimizer(lr)
     
-    self.grad_r = tf.placeholder(tf.float32, [None]+list(input_shape[:2])+[1])
+    self.grad_r = tf.placeholder(tf.float32, [None]+list(out_shape)+[1])
     self.l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in self.theta])
     self.grad_l2 = tf.gradients(self.l2_loss, self.theta)
     
@@ -47,11 +48,15 @@ class FCNIRL:
       print "input_s shape: ", input_s.shape
       # reward = tf_utils.conv2d(input_s, 1, [1,1])
       # reward = tf_utils.conv2d(conv1, 1, [1,1])
-      conv1 = tf_utils.conv2d(input_s, 4, [2,2])
+      conv = tf_utils.conv2d(input_s, 32, [5,5], stride=5)
+      conv = tf_utils.conv2d(conv, 32, [5,5], stride=5)
+      conv = tf_utils.conv2d(conv, 16, [2,2], stride=2)
+      conv = tf_utils.conv2d(conv, 16, [2,2])
+      reward = tf_utils.conv2d(conv, 1, [1,1])
       # reward = tf_utils.conv2d(conv1, 1, [1,1])
-      conv2 = tf_utils.conv2d(conv1, 1, [1,1])
-      conv3 = tf.concat([input_s, conv2], axis=-1)
-      reward = tf_utils.conv2d(conv3, 1, [1,1])
+      # conv3 = tf_utils.conv2d(conv2, 1, [1,1])
+      # conv4 = tf.concat([input_s, conv3], axis=-1)
+      # reward = tf_utils.conv2d(conv4, 1, [1,1])
       # conv2 = tf_utils.conv2d(conv1, 4, [2,2])
       # reward = tf_utils.conv2d(conv1, 1, [2,2])
     theta = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=name)
@@ -156,7 +161,7 @@ def demo_sparse_svf(traj, n_states):
   return p
   
   
-def fcn_maxent_irl(feat_maps, P_as, gamma, trajs, lr, n_iters, gpu_fraction):
+def fcn_maxent_irl(feat_maps, out_shape, P_as, gamma, trajs, lr, n_iters, gpu_fraction):
   """
   Maximum Entropy Inverse Reinforcement Learning (Maxent IRL)
 
@@ -177,20 +182,23 @@ def fcn_maxent_irl(feat_maps, P_as, gamma, trajs, lr, n_iters, gpu_fraction):
   N_TRAJ, N_STATES, _, N_ACTIONS = np.shape(P_as)
   
   # init nn model
-  nn_r = FCNIRL(feat_maps.shape[1:], lr, 3, 3, gpu_fraction)
+  nn_r = FCNIRL(feat_maps.shape[1:], out_shape, lr, 3, 3, gpu_fraction)
   
-  for _ in range(n_iters):
+  for itr in range(n_iters):
     grad_rs = []
+    print "======itr {}=======".format(itr)
     for i in range(N_TRAJ):
+      print "VI traj {}".format(i)
       feat_map, P_a, traj = feat_maps[i], P_as[i], trajs[i]
       feat_map = np.array([feat_map])
       mu_D = demo_sparse_svf(traj, N_STATES)
       rewards = nn_r.get_rewards(feat_map)
-      rewards = np.reshape(rewards, feat_map.shape[1]*feat_map.shape[2], order='F')
+      rewards = np.reshape(rewards, N_STATES, order='F')
+      # rewards = np.reshape(rewards, feat_map.shape[1]*feat_map.shape[2], order='F')
       _, policy = value_iteration.value_iteration(P_a, rewards, gamma, error=0.01, deterministic=True)
       mu_exp = compute_state_visition_freq(P_a, gamma, [traj], policy, deterministic=True)
       grad_r = mu_D - mu_exp
-      grad_r = np.reshape(grad_r, (feat_map.shape[1], feat_map.shape[2], 1), order='F')
+      grad_r = np.reshape(grad_r, (out_shape[0], out_shape[1], 1), order='F')
       grad_rs.append(grad_r)
     grad_rs = np.array(grad_rs)
     grad_theta, l2_loss, grad_norm = nn_r.apply_grads(feat_maps, grad_rs)
