@@ -38,7 +38,8 @@ def conv2d(x, n_kernel, k_sz, stride=1):
   conv = tf.nn.conv2d(x, W, strides=[1, stride, stride, 1], padding='SAME')
   conv = tf.nn.bias_add(conv, b)  # add bias term
   # rectified linear unit: https://en.wikipedia.org/wiki/Rectifier_(neural_networks)
-  return tf.nn.relu(conv)
+  # return tf.nn.relu(conv)
+  return tf.nn.elu(conv)
 
 
 def fc(x, n_output, scope="fc", activation_fn=None, initializer=None):
