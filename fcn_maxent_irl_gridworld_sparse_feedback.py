@@ -149,6 +149,7 @@ class GWExperiment(object):
 
   def test_n_times(self, n):
     for i in range(n):
+      print "=============test {}=============".format(i)
       os.mkdir(self._exp_result_path+'/'+str(i))
       self.test_once(str(i))
 

@@ -101,8 +101,17 @@ def compute_state_visition_freq(P_a, gamma, trajs, policy, deterministic=True):
     mu[traj[0].cur_state, 0] += 1
   mu[:, 0] = mu[:, 0] / len(trajs)
   
-  for s in range(N_STATES):
-    for t in range(T - 1):
+  # for s in range(N_STATES):
+  #   for t in range(T - 1):
+  #     if deterministic:
+  #       mu[s, t + 1] = sum([mu[pre_s, t] * P_a[pre_s, s, int(policy[pre_s])] for pre_s in range(N_STATES)])
+  #     else:
+  #       mu[s, t + 1] = sum(
+  #         [sum([mu[pre_s, t] * P_a[pre_s, s, a1] * policy[pre_s, a1] for a1 in range(N_ACTIONS)]) for pre_s in
+  #          range(N_STATES)])
+
+  for t in range(T - 1):
+    for s in range(N_STATES):
       if deterministic:
         mu[s, t + 1] = sum([mu[pre_s, t] * P_a[pre_s, s, int(policy[pre_s])] for pre_s in range(N_STATES)])
       else:
@@ -110,20 +119,11 @@ def compute_state_visition_freq(P_a, gamma, trajs, policy, deterministic=True):
           [sum([mu[pre_s, t] * P_a[pre_s, s, a1] * policy[pre_s, a1] for a1 in range(N_ACTIONS)]) for pre_s in
            range(N_STATES)])
   
-  # for t in range(T - 1):
-  #   for s in range(N_STATES):
-  #     if deterministic:
-  #       mu[s, t + 1] = sum([mu[pre_s, t] * P_a[pre_s, s, int(policy[pre_s])] for pre_s in range(N_STATES)])
-  #     else:
-  #       mu[s, t + 1] = sum(
-  #         [sum([mu[pre_s, t] * P_a[pre_s, s, a1] * policy[pre_s, a1] for a1 in range(N_ACTIONS)]) for pre_s in
-  #          range(N_STATES)])
-  
   p = np.sum(mu, 1)
   return p
 
 
-def demo_svf(trajs, n_states):
+def demo_svf(traj, n_states):
   """
   compute state visitation frequences from demonstrations
 
@@ -134,10 +134,15 @@ def demo_svf(trajs, n_states):
   """
   
   p = np.zeros(n_states)
-  for traj in trajs:
-    for step in traj:
-      p[step.cur_state] += 1
-  p = p / len(trajs)
+  # for traj in trajs:
+  #   for step in traj:
+  #     p[step.cur_state] += 1
+  # p = p / len(trajs)
+  
+  for step in traj:
+    # p[step.next_state] += 1.0
+    p[step.cur_state] += 1.0
+   
   return p
 
 
@@ -185,18 +190,23 @@ def fcn_maxent_irl(feat_maps, out_shape, P_as, gamma, trajs, lr, n_iters, gpu_fr
   nn_r = FCNIRL(feat_maps.shape[1:], out_shape, lr, 3, 3, gpu_fraction)
   
   for itr in range(n_iters):
+    print "--------itr {}--------".format(itr)
     grad_rs = []
     print "======itr {}=======".format(itr)
     for i in range(N_TRAJ):
       print "VI traj {}".format(i)
+      print "traj {}".format(i)
       feat_map, P_a, traj = feat_maps[i], P_as[i], trajs[i]
       feat_map = np.array([feat_map])
-      mu_D = demo_sparse_svf(traj, N_STATES)
+      # mu_D = demo_sparse_svf(traj, N_STATES)
+      mu_D = demo_svf(traj, N_STATES)
+      print "mu_D:\n", mu_D
       rewards = nn_r.get_rewards(feat_map)
       rewards = np.reshape(rewards, N_STATES, order='F')
       # rewards = np.reshape(rewards, feat_map.shape[1]*feat_map.shape[2], order='F')
       _, policy = value_iteration.value_iteration(P_a, rewards, gamma, error=0.01, deterministic=True)
       mu_exp = compute_state_visition_freq(P_a, gamma, [traj], policy, deterministic=True)
+      print "mu_exp:\n", mu_exp
       grad_r = mu_D - mu_exp
       grad_r = np.reshape(grad_r, (out_shape[0], out_shape[1], 1), order='F')
       grad_rs.append(grad_r)
