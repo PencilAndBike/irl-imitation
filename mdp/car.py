@@ -28,7 +28,7 @@ class LinkAndDiscTraj(object):
     self._grid_h = grid_h
     self._grid_w = grid_w
     self._particle = particle
-    self._origin = self._start_pos - np.array([img_h/2, img_w/2]) * 0.2
+    self._origin = self._start_pos + np.array([img_h/2, -img_w/2]) * 0.2
 
     
   def link_pos(self, pos, next_pos):
@@ -52,8 +52,10 @@ class LinkAndDiscTraj(object):
   
   def dot_pos(self, pos):
     pos = (pos-self._origin)/0.2
-    return np.array([int(pos[0]), int(pos[1])])
+    pos = [-pos[0], pos[1]]
+    return np.array([int(round(pos[0])), int(round(pos[1]))])
     # return disc_pos / np.array([self._h, self._w])
+  
 
   def dot_traj(self, traj):
     doted_traj = []
@@ -62,6 +64,9 @@ class LinkAndDiscTraj(object):
       # Otherwise directly using numpy.array, it would raise an error:
       # ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
       doted_pos = tuple(self.dot_pos(pos))
+      # To avoid position out of index
+      if doted_pos[0]<0 or doted_pos[1]<0 or doted_pos[0]>self._img_h-1 or doted_pos[1]>self._img_w-1:
+        break
       if doted_pos in doted_traj:
         pass
       else:
@@ -96,7 +101,7 @@ class LinkAndDiscTraj(object):
 
 
 class Car(object):
-  def __init__(self, f_dir, l, height=20, width=20):
+  def __init__(self, f_dir, l, height=20, width=20, terminals={}):
     self._imgs = []
     self._poses = []
     self._L = len(self._imgs)
@@ -110,7 +115,7 @@ class Car(object):
                     3, 4, 5,
                     6, 7, 8]
     self.n_actions = len(self.actions)
-    self.terminals = {}
+    self.terminals = terminals
 
   
   def get_actions(self, state):
@@ -134,7 +139,10 @@ class Car(object):
       return True
     else:
       return False
-
+    
+  def set_terminal(self, termials):
+    self.terminals = termials
+    
   
   def get_transition_states_and_probs(self, state, action):
     """
