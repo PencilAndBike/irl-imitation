@@ -24,9 +24,9 @@ PARSER.add_argument('-img_wid', '--img_width', default=256, type=int, help='widt
 PARSER.add_argument('-g', '--gamma', default=0.9, type=float, help='discount factor')
 PARSER.add_argument('-nd', '--n_demos', default=1, type=int, help='number of expert trajectories')
 PARSER.add_argument('-lp', '--l_pos', default=7, type=int, help='length of concated positions')
-PARSER.add_argument('-lt', '--l_traj', default=4, type=int, help='length of discrete trajectory')
+PARSER.add_argument('-lt', '--l_traj', default=5, type=int, help='length of discrete trajectory')
 PARSER.add_argument('-lr', '--learning_rate', default=0.02, type=float, help='learning rate')
-PARSER.add_argument('-ni', '--n_iters', default=20, type=int, help='number of iterations')
+PARSER.add_argument('-ni', '--n_iters', default=10, type=int, help='number of iterations')
 PARSER.add_argument('-rd', '--record_dir', default="/home/pirate03/Downloads/prediction_data/crop256_for_test", type=str, \
                     help='recording data dir')
 PARSER.add_argument('-name', '--exp_name', default="gw10_fcn_sparse_feed", type=str, help='experiment name')
@@ -98,12 +98,13 @@ class CarIRLExp(object):
       for i, line in enumerate(lines):
         info = map(float, line.split())
         # poses.append([info[1], info[2], info[4]])
-        poses.append([info[1], info[2]])
+        poses.append([info[2], info[1]])
     return np.array(poses)
 
 
   def rand_traj(self):
-    i = np.random.randint(self._L - self._l_pos)
+    # i = np.random.randint(self._L - self._l_pos)
+    i = 9
     traj = []
     img = self._imgs[i]
     for j in range(self._l_pos):
@@ -127,22 +128,44 @@ class CarIRLExp(object):
       trajs.append(mtraj.traj)
     return np.array(ids), np.array(feat_maps), np.array(trajs)
 
+  # def save_plt(self, name, figsize, traj, rewards, values, policy):
+  #   plt.figure(figsize=figsize)
+  #   x = np.zeros((self._h, self._w))
+  #   for idx in traj:
+  #     x[self._car.idx2pos(idx)] = 1.0
+  #   plt.subplot(1,4,1)
+  #   img_utils.heatmap2d(x, 'Traj', block=False)
+  #   plt.subplot(1,4,2)
+  #   img_utils.heatmap2d(np.reshape(rewards, (self._h, self._w), order='F'), 'Rewards Map', block=False)
+  #   plt.subplot(1,4,3)
+  #   img_utils.heatmap2d(np.reshape(values, (self._h, self._w), order='F'), 'Value Map', block=False)
+  #   plt.subplot(1,4,4)
+  #   img_utils.heatmap2d(np.reshape(policy, (self._h, self._w), order='F'), 'Policy Map', block=False)
+  #   plt.savefig(self._exp_result_path+"/"+name+".png")
+  #   plt.close()
+  #
   def save_plt(self, name, figsize, traj, rewards, values, policy):
     plt.figure(figsize=figsize)
     x = np.zeros((self._h, self._w))
     for idx in traj:
       x[self._car.idx2pos(idx)] = 1.0
+    print "traj:\n", traj
+    pos_traj = [self._car.idx2pos(idx) for idx in traj]
+    print "pos traj:\n", pos_traj
     plt.subplot(1,4,1)
     img_utils.heatmap2d(x, 'Traj', block=False)
+    print "rewards:\n", np.reshape(rewards, (self._h, self._w), order='F')
     plt.subplot(1,4,2)
     img_utils.heatmap2d(np.reshape(rewards, (self._h, self._w), order='F'), 'Rewards Map', block=False)
+    print "value:\n", np.reshape(values, (self._h, self._w), order='F')
     plt.subplot(1,4,3)
     img_utils.heatmap2d(np.reshape(values, (self._h, self._w), order='F'), 'Value Map', block=False)
+    print "policy:\n", np.reshape(policy, (self._h, self._w), order='F')
     plt.subplot(1,4,4)
     img_utils.heatmap2d(np.reshape(policy, (self._h, self._w), order='F'), 'Policy Map', block=False)
     plt.savefig(self._exp_result_path+"/"+name+".png")
     plt.close()
-    
+
     
   def shorten(self, traj):
     return traj[:self._l_traj]
@@ -175,8 +198,16 @@ class CarIRLExp(object):
     print "getting demo trajs..."
     ids, feat_maps, demo_trajs = self.get_demo_trajs(self._n_demos)
     print "got demo trajs"
-    shortened_trajs = self.shorten_trajs(demo_trajs)
-    wraped_trajs = self.wrap_trajs(shortened_trajs)
+    # shortened_trajs = self.shorten_trajs(demo_trajs)
+    # wraped_trajs = self.wrap_trajs(shortened_trajs)
+    wraped_trajs = self.wrap_trajs(demo_trajs)
+    # P_as = []
+    # for i in range(self._n_demos):
+    #   shortened_traj = shortened_trajs[i]
+      # terminals = {self._car.idx2pos(shortened_traj[-1])}
+      # print "terminals: ", terminals
+      # self._car.set_terminal(terminals)
+      # P_as.append(self._car.get_transition_mat())
     P_as = [self._P_a] * self._n_demos
     print "Run fcn_maxent_irl..."
     rewards = fcn_maxent_irl(feat_maps, np.array([self._h, self._w]), P_as, self._gamma, wraped_trajs,
@@ -190,7 +221,15 @@ class CarIRLExp(object):
       cv2.imwrite(self._exp_result_path+"/"+exp_id+'/'+str(i)+'_'+str(ids[i])+".png", feat_maps[i])
       self.save_plt(exp_id+'/'+str(i), (4 * self._w, self._h), demo_trajs[i], reward, value, policy)
 
+
+def test_heatmap():
+  x = np.arange(9).reshape((3,3))
+  plt.subplot(1,1,1)
+  img_utils.heatmap2d(x, 'x', block=False)
+  plt.savefig('test.png')
+  plt.close()
     
 if __name__ == "__main__":
   car_irl_exp = CarIRLExp(L_POS, L_TRAJ, N_DEMOS, RECORD_DIR, n_iters=N_ITERS, h=H, w=W, img_h=IH, img_w=IW)
   car_irl_exp.test_once('1')
+  # test_heatmap()

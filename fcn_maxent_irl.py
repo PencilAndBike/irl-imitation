@@ -48,11 +48,11 @@ class FCNIRL:
       print "input_s shape: ", input_s.shape
       # reward = tf_utils.conv2d(input_s, 1, [1,1])
       # reward = tf_utils.conv2d(conv1, 1, [1,1])
-      conv = tf_utils.conv2d(input_s, 32, [4,4], stride=4)
-      conv = tf_utils.conv2d(conv, 32, [4,4], stride=4)
-      conv = tf_utils.conv2d(conv, 16, [2,2], stride=2)
-      conv = tf_utils.conv2d(conv, 16, [2,2])
-      reward = tf_utils.conv2d(conv, 1, [1,1])
+      conv1 = tf_utils.conv2d(input_s, 32, [4,4], stride=4, name='conv1', bn='True')
+      conv2 = tf_utils.conv2d(conv1, 32, [4,4], stride=4, name='conv2')
+      conv3 = tf_utils.conv2d(conv2, 16, [2,2], stride=2, name='conv3')
+      conv4 = tf_utils.conv2d(conv3, 16, [2,2], name='conv4')
+      reward = tf_utils.conv2d(conv4, 1, [1,1], name=conv4)
       # reward = tf_utils.conv2d(conv1, 1, [1,1])
       # conv3 = tf_utils.conv2d(conv2, 1, [1,1])
       # conv4 = tf.concat([input_s, conv3], axis=-1)
@@ -202,12 +202,14 @@ def fcn_maxent_irl(feat_maps, out_shape, P_as, gamma, trajs, lr, n_iters, gpu_fr
       mu_D = demo_svf(traj, N_STATES)
       print "mu_D:\n", mu_D
       rewards = nn_r.get_rewards(feat_map)
+      print "rewards\n", rewards
       rewards = np.reshape(rewards, N_STATES, order='F')
       # rewards = np.reshape(rewards, feat_map.shape[1]*feat_map.shape[2], order='F')
       _, policy = value_iteration.value_iteration(P_a, rewards, gamma, error=0.01, deterministic=True)
       mu_exp = compute_state_visition_freq(P_a, gamma, [traj], policy, deterministic=True)
       print "mu_exp:\n", mu_exp
       grad_r = mu_D - mu_exp
+      print "grad_r: \n", grad_r
       grad_r = np.reshape(grad_r, (out_shape[0], out_shape[1], 1), order='F')
       grad_rs.append(grad_r)
     grad_rs = np.array(grad_rs)
