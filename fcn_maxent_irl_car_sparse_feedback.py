@@ -22,11 +22,11 @@ PARSER.add_argument('-wid', '--width', default=8, type=int, help='width of the g
 PARSER.add_argument('-img_hei', '--img_height', default=256, type=int, help='height of the img')
 PARSER.add_argument('-img_wid', '--img_width', default=256, type=int, help='width of the img')
 PARSER.add_argument('-g', '--gamma', default=0.9, type=float, help='discount factor')
-PARSER.add_argument('-nd', '--n_demos', default=1, type=int, help='number of expert trajectories')
+PARSER.add_argument('-nd', '--n_demos', default=5, type=int, help='number of expert trajectories')
 PARSER.add_argument('-lp', '--l_pos', default=7, type=int, help='length of concated positions')
 PARSER.add_argument('-lt', '--l_traj', default=5, type=int, help='length of discrete trajectory')
 PARSER.add_argument('-lr', '--learning_rate', default=0.02, type=float, help='learning rate')
-PARSER.add_argument('-ni', '--n_iters', default=10, type=int, help='number of iterations')
+PARSER.add_argument('-ni', '--n_iters', default=20, type=int, help='number of iterations')
 PARSER.add_argument('-rd', '--record_dir', default="/home/pirate03/Downloads/prediction_data/crop256_for_test", type=str, \
                     help='recording data dir')
 PARSER.add_argument('-name', '--exp_name', default="gw10_fcn_sparse_feed", type=str, help='experiment name')
@@ -117,13 +117,26 @@ class CarIRLExp(object):
     return MTraj(i, img, idx_traj)
     # return MTraj(img, disc_traj)
 
-  def get_demo_trajs(self, n):
-    ids = []
+  def get_traj(self, i):
+    traj = []
+    img = self._imgs[i]
+    for j in range(self._l_pos):
+      traj.append(self._poses[i+j])
+    disc_traj = LinkAndDiscTraj(traj=traj, img_h=self._img_h, img_w=self._img_w,
+                                grid_h=self._grid_h, grid_w=self._grid_w).discrete()
+    idx_traj = []
+    for disc_pos in disc_traj:
+      idx_traj.append(self._car.pos2idx(disc_pos))
+    return MTraj(i, img, idx_traj)
+
+
+  def get_demo_trajs(self, ids=[9, 20, 23, 68, 118]):
     feat_maps = []
     trajs = []
-    for _ in range(n):
-      mtraj = self.rand_traj()
-      ids.append(mtraj.id)
+    for id in ids:
+      # mtraj = self.rand_traj()
+      mtraj = self.get_traj(id)
+      # ids.append(mtraj.id)
       feat_maps.append(mtraj.img)
       trajs.append(mtraj.traj)
     return np.array(ids), np.array(feat_maps), np.array(trajs)
@@ -169,13 +182,16 @@ class CarIRLExp(object):
     
   def shorten(self, traj):
     return traj[:self._l_traj]
-  
+    
   def shorten_trajs(self, trajs):
+    l = min(map(len, trajs))
     shortened_trajs = []
     for traj in trajs:
-      shortened_traj = self.shorten(traj)
-      if len(shortened_traj) == self._l_traj:
-        shortened_trajs.append(shortened_traj)
+      shortened_trajs.append(traj[:l])
+    # for traj in trajs:
+    #   shortened_traj = self.shorten(traj)
+    #   if len(shortened_traj) == self._l_traj:
+    #     shortened_trajs.append(shortened_traj)
     return shortened_trajs
     
   
@@ -196,11 +212,11 @@ class CarIRLExp(object):
   def test_once(self, exp_id=None):
     os.mkdir(self._exp_result_path+'/'+exp_id)
     print "getting demo trajs..."
-    ids, feat_maps, demo_trajs = self.get_demo_trajs(self._n_demos)
+    ids, feat_maps, demo_trajs = self.get_demo_trajs()
     print "got demo trajs"
-    # shortened_trajs = self.shorten_trajs(demo_trajs)
-    # wraped_trajs = self.wrap_trajs(shortened_trajs)
-    wraped_trajs = self.wrap_trajs(demo_trajs)
+    shortened_trajs = self.shorten_trajs(demo_trajs)
+    wraped_trajs = self.wrap_trajs(shortened_trajs)
+    # wraped_trajs = self.wrap_trajs(demo_trajs)
     # P_as = []
     # for i in range(self._n_demos):
     #   shortened_traj = shortened_trajs[i]
@@ -208,7 +224,7 @@ class CarIRLExp(object):
       # print "terminals: ", terminals
       # self._car.set_terminal(terminals)
       # P_as.append(self._car.get_transition_mat())
-    P_as = [self._P_a] * self._n_demos
+    P_as = [self._P_a] * len(wraped_trajs)
     print "Run fcn_maxent_irl..."
     rewards = fcn_maxent_irl(feat_maps, np.array([self._h, self._w]), P_as, self._gamma, wraped_trajs,
                              self._learning_rate, self._n_iters, self._gpu_fraction)

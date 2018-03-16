@@ -7,7 +7,8 @@ import tf_utils
 from utils import *
 
 class FCNIRL:
-  def __init__(self, input_shape, out_shape, lr, n_h1=400, n_h2=300, l2=10, name='deep_irl_fc', gpu_fraction=0.2):
+  def __init__(self, input_shape, out_shape, lr, n_h1=400, n_h2=300, l2=10, name='deep_irl_fc', gpu_fraction=0.2,
+               is_train=True):
     # self.n_input = n_input
     self.input_shape = input_shape
     self.out_shape = out_shape
@@ -16,6 +17,7 @@ class FCNIRL:
     self.n_h2 = n_h2
     self.name = name
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=gpu_fraction)
+    self.is_train = tf.placeholder(tf.bool, name="is_train")
     self.sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
     self.input_s, self.reward, self.theta = self._build_network(self.name)
     self.optimizer = tf.train.GradientDescentOptimizer(lr)
@@ -48,11 +50,15 @@ class FCNIRL:
       print "input_s shape: ", input_s.shape
       # reward = tf_utils.conv2d(input_s, 1, [1,1])
       # reward = tf_utils.conv2d(conv1, 1, [1,1])
-      conv1 = tf_utils.conv2d(input_s, 32, [4,4], stride=4)
-      conv2 = tf_utils.conv2d(conv1, 32, [4,4], stride=4)
-      conv3 = tf_utils.conv2d(conv2, 16, [2,2], stride=2)
-      conv4 = tf_utils.conv2d(conv3, 16, [2,2])
-      reward = tf_utils.conv2d(conv4, 1, [1,1])
+      conv1 = tf_utils.conv2d(input_s, 32, [4,4], stride=4, name='conv1')
+      conv1 = tf_utils.bn(conv1, is_train=self.is_train, name='bn1')
+      conv2 = tf_utils.conv2d(conv1, 32, [4,4], stride=4, name='conv2')
+      conv2 = tf_utils.bn(conv2, is_train=self.is_train, name='bn2')
+      conv3 = tf_utils.conv2d(conv2, 16, [2,2], stride=2, name='conv3')
+      conv3 = tf_utils.bn(conv3, is_train=self.is_train, name='bn3')
+      conv4 = tf_utils.conv2d(conv3, 16, [2,2], name='conv4')
+      conv4 = tf_utils.bn(conv4, is_train=self.is_train, name='bn4')
+      reward = tf_utils.conv2d(conv4, 1, [1,1], name='reward')
       # reward = tf_utils.conv2d(conv1, 1, [1,1])
       # conv3 = tf_utils.conv2d(conv2, 1, [1,1])
       # conv4 = tf.concat([input_s, conv3], axis=-1)
@@ -65,15 +71,16 @@ class FCNIRL:
   def get_theta(self):
     return self.sess.run(self.theta)
   
-  def get_rewards(self, states):
-    rewards = self.sess.run(self.reward, feed_dict={self.input_s: states})
+  def get_rewards(self, states, is_train=True):
+    rewards = self.sess.run(self.reward, feed_dict={self.input_s: states, self.is_train: is_train})
     return rewards
   
-  def apply_grads(self, feat_map, grad_r):
+  def apply_grads(self, feat_map, grad_r, is_train=True):
     # grad_r = np.reshape(grad_r, [-1, 1])
     # feat_map = np.reshape(feat_map, [-1, self.n_input])
     _, grad_theta, l2_loss, grad_norms = self.sess.run([self.optimize, self.grad_theta, self.l2_loss, self.grad_norms],
-                                                       feed_dict={self.grad_r: grad_r, self.input_s: feat_map})
+                                                       feed_dict={self.grad_r: grad_r, self.input_s: feat_map,
+                                                                  self.is_train: is_train})
     return grad_theta, l2_loss, grad_norms
 
 

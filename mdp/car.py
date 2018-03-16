@@ -73,6 +73,7 @@ class LinkAndDiscTraj(object):
         doted_traj.append(doted_pos)
     return np.array(doted_traj)
   
+  
   def dot(self):
     linked_traj = []
     for i in range(len(self._traj)-1):
@@ -81,6 +82,26 @@ class LinkAndDiscTraj(object):
       inter_linked_traj = self.link_pos(pos, next_pos)
       linked_traj.extend(inter_linked_traj)
     return self.dot_traj(linked_traj)
+  
+  
+  def is_tile(self, pos1, pos2):
+    tile_poses = [(pos1[0]-1, pos1[1]-1),
+                  (pos1[0]-1, pos1[1]+1),
+                  (pos1[0]+1, pos1[1]-1),
+                  (pos1[0]+1, pos1[1]+1)]
+    return True if pos2 in tile_poses else False
+  
+  
+  def tile_traj(self, traj):
+    tiled_traj = [traj[0]]
+    for i in range(len(traj)-2):
+      # If next pos is in tiled_traj, then the pos thould be passed
+      if traj[i+1] in tiled_traj:
+        pass
+      if self.is_tile(traj[i], traj[i+2]):
+        tiled_traj.append(traj[i+2])
+    return tiled_traj
+    
     
   def discrete_pos(self, pos):
     return pos / np.array([self._grid_h, self._grid_w])
@@ -88,6 +109,7 @@ class LinkAndDiscTraj(object):
   
   def discrete(self):
     doted_traj = self.dot()
+    # doted_traj = self.tile_traj(doted_traj)
     discreted_traj = []
     for dot_pos in doted_traj:
       # To discriminate if discreted_pos is in discreted_traj, it has to be tupled.
@@ -108,12 +130,17 @@ class Car(object):
     self._l = l
     self.height = height
     self.width = width
-    self.neighbors = [(-1, -1), (-1, 0), (-1, 1),
+    # self.neighbors = [(-1, -1), (-1, 0), (-1, 1),
+    #                   (0, -1), (0, 0), (0, 1),
+    #                   (1, -1), (1, 0), (1, 1)]
+    # self.actions = [0, 1, 2,
+    #                 3, 4, 5,
+    #                 6, 7, 8]
+    self.neighbors = [(-1, 0),
                       (0, -1), (0, 0), (0, 1),
-                      (1, -1), (1, 0), (1, 1)]
+                      (1, 0)]
     self.actions = [0, 1, 2,
-                    3, 4, 5,
-                    6, 7, 8]
+                    3, 4]
     self.n_actions = len(self.actions)
     self.terminals = terminals
 
