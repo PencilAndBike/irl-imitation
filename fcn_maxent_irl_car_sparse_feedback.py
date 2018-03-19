@@ -180,9 +180,6 @@ class CarIRLExp(object):
     plt.close()
 
     
-  def shorten(self, traj):
-    return traj[:self._l_traj]
-    
   def shorten_trajs(self, trajs):
     l = min(map(len, trajs))
     shortened_trajs = []
@@ -209,14 +206,28 @@ class CarIRLExp(object):
       step_wraped_trajs.append(self.wrap(traj))
     return step_wraped_trajs
     
+    
+  def run(self, P_a, start_idx, policy, l):
+    traj = []
+    idx = start_idx
+    traj.append(idx)
+    for i in range(l):
+      act = int(policy[idx])
+      next_idx = np.argmax(P_a[idx, :, act])
+      traj.append(next_idx)
+      idx = next_idx
+    pos_traj = [self._car.idx2pos(idx) for idx in traj]
+    return pos_traj
+    
   def test_once(self, exp_id=None):
     os.mkdir(self._exp_result_path+'/'+exp_id)
     print "getting demo trajs..."
     ids, feat_maps, demo_trajs = self.get_demo_trajs()
     print "got demo trajs"
-    shortened_trajs = self.shorten_trajs(demo_trajs)
-    wraped_trajs = self.wrap_trajs(shortened_trajs)
-    # wraped_trajs = self.wrap_trajs(demo_trajs)
+    # shortened_trajs = self.shorten_trajs(demo_trajs)
+    wraped_trajs = self.wrap_trajs(demo_trajs)
+    # wraped_trajs =
+    #  self.wrap_trajs(demo_trajs)
     # P_as = []
     # for i in range(self._n_demos):
     #   shortened_traj = shortened_trajs[i]
@@ -234,6 +245,10 @@ class CarIRLExp(object):
       P_a = P_as[i]
       reward = rewards[i]
       value, policy = value_iteration.value_iteration(P_a, reward, self._gamma, error=0.01, deterministic=True)
+      traj = demo_trajs[i]
+      # irl_traj = self.run(P_a, traj[0], policy, 2)
+      # print "agent run: ", irl_traj
+      
       cv2.imwrite(self._exp_result_path+"/"+exp_id+'/'+str(i)+'_'+str(ids[i])+".png", feat_maps[i])
       self.save_plt(exp_id+'/'+str(i), (4 * self._w, self._h), demo_trajs[i], reward, value, policy)
 

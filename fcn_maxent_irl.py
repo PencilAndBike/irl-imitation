@@ -102,7 +102,7 @@ def compute_state_visition_freq(P_a, gamma, trajs, policy, deterministic=True):
   
   T = len(trajs[0])
   # mu[s, t] is the prob of visiting state s at time t
-  mu = np.zeros([N_STATES, T])
+  mu = np.zeros([N_STATES, T+1])
   
   for traj in trajs:
     mu[traj[0].cur_state, 0] += 1
@@ -117,7 +117,7 @@ def compute_state_visition_freq(P_a, gamma, trajs, policy, deterministic=True):
   #         [sum([mu[pre_s, t] * P_a[pre_s, s, a1] * policy[pre_s, a1] for a1 in range(N_ACTIONS)]) for pre_s in
   #          range(N_STATES)])
 
-  for t in range(T - 1):
+  for t in range(T):
     for s in range(N_STATES):
       if deterministic:
         mu[s, t + 1] = sum([mu[pre_s, t] * P_a[pre_s, s, int(policy[pre_s])] for pre_s in range(N_STATES)])
@@ -149,6 +149,8 @@ def demo_svf(traj, n_states):
   for step in traj:
     # p[step.next_state] += 1.0
     p[step.cur_state] += 1.0
+  
+  p[step.next_state] += 1.0
    
   return p
 
