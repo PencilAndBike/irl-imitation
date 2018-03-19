@@ -44,6 +44,10 @@ def value_iteration(P_a, rewards, gamma, error=0.1, deterministic=True):
   #     v_s = []
   #     values[s] = max([sum([P_a[s, s1, a]*(rewards[s] + gamma*values_tmp[s1]) for s1 in range(N_STATES)]) for a in range(N_ACTIONS)])
   #
+  #   print "values: ", values
+  #   values_cmp = np.max(np.matmul(P_a_T, rewards+gamma*values_tmp), axis=1)
+  #   print "values cmp:", values_cmp
+  #
   #   if max([abs(values[s] - values_tmp[s]) for s in range(N_STATES)]) < error:
   #     break
   #
@@ -51,7 +55,6 @@ def value_iteration(P_a, rewards, gamma, error=0.1, deterministic=True):
   
   while True:
     values_tmp = values.copy()
-    # values = np.max(P_a_T*(rewards+gamma*values_tmp), axis=1)
     values = np.max(np.matmul(P_a_T, rewards+gamma*values_tmp), axis=1)
     if np.max(np.abs(values_tmp-values)) < error:
       break
@@ -59,24 +62,11 @@ def value_iteration(P_a, rewards, gamma, error=0.1, deterministic=True):
   
   print "value iteration {} until convergence".format(itr)
 
-  if deterministic:
-    # generate deterministic policy
-    policy = np.zeros([N_STATES])
-    for s in range(N_STATES):
-      policy[s] = np.argmax([sum([P_a[s, s1, a]*(rewards[s]+gamma*values[s1]) 
-                                  for s1 in range(N_STATES)]) 
-                                  for a in range(N_ACTIONS)])
+  policy = np.argmax(np.matmul(P_a_T, rewards+gamma*values_tmp), axis=1)
+  policy = np.squeeze(policy)
+  
 
-    return values, policy
-  else:
-    # generate stochastic policy
-    policy = np.zeros([N_STATES, N_ACTIONS])
-    for s in range(N_STATES):
-      v_s = np.array([sum([P_a[s, s1, a]*(rewards[s] + gamma*values[s1]) for s1 in range(N_STATES)]) for a in range(N_ACTIONS)])
-      policy[s,:] = np.transpose(v_s/np.sum(v_s))
-    return values, policy
-
-
+  return values, policy
 
 
 class ValueIterationAgent(object):
