@@ -11,7 +11,7 @@ import math
 import numpy as np
 
 
-def value_iteration(P_a, rewards, gamma, error=0.01, deterministic=True):
+def value_iteration(P_a, rewards, gamma, error=0.1, deterministic=True):
   """
   static value iteration function. Perhaps the most useful function in this repo
   
@@ -31,19 +31,33 @@ def value_iteration(P_a, rewards, gamma, error=0.01, deterministic=True):
   """
   N_STATES, _, N_ACTIONS = np.shape(P_a)
 
-  values = np.zeros([N_STATES])
+  values = np.zeros([N_STATES, 1])
+  rewards = rewards[:, np.newaxis]
+  P_a_T = P_a.transpose(0, 2, 1)
 
   # estimate values
+  itr = 0
+  # while True:
+  #   values_tmp = values.copy()
+  #
+  #   for s in range(N_STATES):
+  #     v_s = []
+  #     values[s] = max([sum([P_a[s, s1, a]*(rewards[s] + gamma*values_tmp[s1]) for s1 in range(N_STATES)]) for a in range(N_ACTIONS)])
+  #
+  #   if max([abs(values[s] - values_tmp[s]) for s in range(N_STATES)]) < error:
+  #     break
+  #
+  #   itr += 1
+  
   while True:
     values_tmp = values.copy()
-
-    for s in range(N_STATES):
-      v_s = []
-      values[s] = max([sum([P_a[s, s1, a]*(rewards[s] + gamma*values_tmp[s1]) for s1 in range(N_STATES)]) for a in range(N_ACTIONS)])
-
-    if max([abs(values[s] - values_tmp[s]) for s in range(N_STATES)]) < error:
+    # values = np.max(P_a_T*(rewards+gamma*values_tmp), axis=1)
+    values = np.max(np.matmul(P_a_T, rewards+gamma*values_tmp), axis=1)
+    if np.max(np.abs(values_tmp-values)) < error:
       break
-
+    itr += 1
+  
+  print "value iteration {} until convergence".format(itr)
 
   if deterministic:
     # generate deterministic policy
