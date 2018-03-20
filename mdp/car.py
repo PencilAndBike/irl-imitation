@@ -14,7 +14,7 @@ MTraj = namedtuple('MTraj', 'id img traj')
 
 
 class LinkAndDiscTraj(object):
-  def __init__(self, traj, img_h=500, img_w=500, grid_h=25, grid_w=25, particle=0.2):
+  def __init__(self, traj, img_h=500, img_w=500, grid_h=25, grid_w=25, particle=0.2, idx=None):
     """
     :param traj: np.array [pos1, pos2, ..., pos_n]
     :param h:
@@ -29,6 +29,7 @@ class LinkAndDiscTraj(object):
     self._grid_w = grid_w
     self._particle = particle
     self._origin = self._start_pos + np.array([img_h/2, -img_w/2]) * 0.2
+    self._idx = idx
 
     
   def link_pos(self, pos, next_pos):
@@ -79,8 +80,14 @@ class LinkAndDiscTraj(object):
     for i in range(len(self._traj)-1):
       pos = self._traj[i]
       next_pos = self._traj[i+1]
-      inter_linked_traj = self.link_pos(pos, next_pos)
-      linked_traj.extend(inter_linked_traj)
+      try:
+        inter_linked_traj = self.link_pos(pos, next_pos)
+      except Exception as e:
+        print e
+        print self._idx
+        inter_linked_traj = []
+      finally:
+        linked_traj.extend(inter_linked_traj)
     return self.dot_traj(linked_traj)
   
   
@@ -93,13 +100,13 @@ class LinkAndDiscTraj(object):
   
   
   def tile_traj(self, traj):
-    tiled_traj = [traj[0]]
+    tiled_traj = [tuple(traj[0])]
     for i in range(len(traj)-2):
       # If next pos is in tiled_traj, then the pos thould be passed
-      if traj[i+1] in tiled_traj:
+      if tuple(traj[i+1]) in tiled_traj:
         pass
-      if self.is_tile(traj[i], traj[i+2]):
-        tiled_traj.append(traj[i+2])
+      if self.is_tile(tuple(traj[i]), tuple(traj[i+2])):
+        tiled_traj.append(tuple(traj[i+2]))
     return tiled_traj
     
     

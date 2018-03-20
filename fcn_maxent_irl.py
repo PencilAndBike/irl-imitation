@@ -52,7 +52,7 @@ class FCNIRL:
       # reward = tf_utils.conv2d(conv1, 1, [1,1])
       conv1 = tf_utils.conv2d(input_s, 32, [4,4], stride=4, name='conv1')
       conv1 = tf_utils.bn(conv1, is_train=self.is_train, name='bn1')
-      conv2 = tf_utils.conv2d(conv1, 32, [4,4], stride=4, name='conv2')
+      conv2 = tf_utils.conv2d(conv1, 32, [2,2], stride=2, name='conv2')
       conv2 = tf_utils.bn(conv2, is_train=self.is_train, name='bn2')
       conv3 = tf_utils.conv2d(conv2, 16, [2,2], stride=2, name='conv3')
       conv3 = tf_utils.bn(conv3, is_train=self.is_train, name='bn3')
@@ -198,6 +198,7 @@ def fcn_maxent_irl(feat_maps, out_shape, P_as, gamma, trajs, lr, n_iters, gpu_fr
   # init nn model
   nn_r = FCNIRL(feat_maps.shape[1:], out_shape, lr, 3, 3, gpu_fraction)
   
+  saver = tf.train.Saver(tf.global_variables())
   for itr in range(n_iters):
     print "--------itr {}--------".format(itr)
     grad_rs = []
@@ -209,21 +210,23 @@ def fcn_maxent_irl(feat_maps, out_shape, P_as, gamma, trajs, lr, n_iters, gpu_fr
       feat_map = np.array([feat_map])
       # mu_D = demo_sparse_svf(traj, N_STATES)
       mu_D = demo_svf(traj, N_STATES)
-      print "mu_D:\n", mu_D
+      # print "mu_D:\n", mu_D
       rewards = nn_r.get_rewards(feat_map)
-      print "rewards\n", rewards
+      # print "rewards\n", rewards
       rewards = np.reshape(rewards, N_STATES, order='F')
       # rewards = np.reshape(rewards, feat_map.shape[1]*feat_map.shape[2], order='F')
       _, policy = value_iteration.value_iteration(P_a, rewards, gamma, error=0.01, deterministic=True)
       mu_exp = compute_state_visition_freq(P_a, gamma, [traj], policy, deterministic=True)
-      print "mu_exp:\n", mu_exp
+      # print "mu_exp:\n", mu_exp
       grad_r = mu_D - mu_exp
       print "grad_r: \n", grad_r
       grad_r = np.reshape(grad_r, (out_shape[0], out_shape[1], 1), order='F')
       grad_rs.append(grad_r)
     grad_rs = np.array(grad_rs)
     grad_theta, l2_loss, grad_norm = nn_r.apply_grads(feat_maps, grad_rs)
-    
+    if itr == 0 or (itr+1) % 100 == 0:
+      saver.save(nn_r.sess, "./ckpt4/model_{}.ckpt".format(itr))
+
   rewards = nn_r.get_rewards(feat_maps)
   n_rewards = []
   # for reward, feat_map in zip(rewards, feat_maps):
