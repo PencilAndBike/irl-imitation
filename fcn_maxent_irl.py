@@ -173,9 +173,9 @@ def demo_sparse_svf(traj, n_states):
   for i, step in enumerate(traj):
     p[step.next_state] = (i+1.0)/l
   return p
+
   
-  
-def fcn_maxent_irl(feat_maps, out_shape, P_as, gamma, trajs, lr, n_iters, gpu_fraction):
+def fcn_maxent_irl(t_feat_maps, out_shape, P_a, gamma, t_trajs, lr, n_iters, gpu_fraction, ckpt_path, batch_size=16):
   """
   Maximum Entropy Inverse Reinforcement Learning (Maxent IRL)
 
@@ -193,20 +193,21 @@ def fcn_maxent_irl(feat_maps, out_shape, P_as, gamma, trajs, lr, n_iters, gpu_fr
     rewards     Nx1 vector - recoverred state rewards
   """
   
-  N_TRAJ, N_STATES, _, N_ACTIONS = np.shape(P_as)
+  N_STATES, _, N_ACTIONS = np.shape(P_a)
   
   # init nn model
-  nn_r = FCNIRL(feat_maps.shape[1:], out_shape, lr, 3, 3, gpu_fraction)
+  nn_r = FCNIRL(t_feat_maps.shape[1:], out_shape, lr, 3, 3, gpu_fraction)
   
   saver = tf.train.Saver(tf.global_variables())
   for itr in range(n_iters):
     print "--------itr {}--------".format(itr)
     grad_rs = []
-    print "======itr {}=======".format(itr)
-    for i in range(N_TRAJ):
-      print "VI traj {}".format(i)
-      print "traj {}".format(i)
-      feat_map, P_a, traj = feat_maps[i], P_as[i], trajs[i]
+    ids = np.random.randint(len(t_feat_maps), size=batch_size)
+    feat_maps = t_feat_maps[ids]
+    trajs = [t_trajs[i] for i in ids]
+    
+    for i in range(batch_size):
+      feat_map, traj = feat_maps[i], trajs[i]
       feat_map = np.array([feat_map])
       # mu_D = demo_sparse_svf(traj, N_STATES)
       mu_D = demo_svf(traj, N_STATES)
@@ -219,25 +220,47 @@ def fcn_maxent_irl(feat_maps, out_shape, P_as, gamma, trajs, lr, n_iters, gpu_fr
       mu_exp = compute_state_visition_freq(P_a, gamma, [traj], policy, deterministic=True)
       # print "mu_exp:\n", mu_exp
       grad_r = mu_D - mu_exp
-      print "grad_r: \n", grad_r
+      if itr == 0 or (itr + 1) % 10 == 0:
+        print "grad_r: ", grad_r
       grad_r = np.reshape(grad_r, (out_shape[0], out_shape[1], 1), order='F')
       grad_rs.append(grad_r)
     grad_rs = np.array(grad_rs)
     grad_theta, l2_loss, grad_norm = nn_r.apply_grads(feat_maps, grad_rs)
     if itr == 0 or (itr+1) % 100 == 0:
-      saver.save(nn_r.sess, "./ckpt4/model_{}.ckpt".format(itr))
+      saver.save(nn_r.sess, ckpt_path+"/model_{}.ckpt".format(itr))
 
+
+def test_model(feat_maps, out_shape, P_a, gamma, trajs, lr, n_iters, gpu_fraction, ckpt_path):
+  N_TRAJ = len(feat_maps)
+  N_STATES, _, N_ACTIONS = np.shape(P_a)
+  # init nn model
+  nn_r = FCNIRL(feat_maps.shape[1:], out_shape, lr, 3, 3, gpu_fraction)
+  saver = tf.train.Saver(tf.global_variables())
+  saver.restore(nn_r.sess, ckpt_path)
+  
+  for i in range(N_TRAJ):
+    print "VI traj {}".format(i)
+    print "traj {}".format(i)
+    feat_map, traj = feat_maps[i], trajs[i]
+    feat_map = np.array([feat_map])
+    # mu_D = demo_sparse_svf(traj, N_STATES)
+    mu_D = demo_svf(traj, N_STATES)
+    # print "mu_D:\n", mu_D
+    rewards = nn_r.get_rewards(feat_map)
+    # print "rewards\n", rewards
+    rewards = np.reshape(rewards, N_STATES, order='F')
+    # rewards = np.reshape(rewards, feat_map.shape[1]*feat_map.shape[2], order='F')
+    _, policy = value_iteration.value_iteration(P_a, rewards, gamma, error=0.01, deterministic=True)
+    mu_exp = compute_state_visition_freq(P_a, gamma, [traj], policy, deterministic=True)
+    # print "mu_exp:\n", mu_exp
+    grad_r = mu_D - mu_exp
+    print "grad_r: \n", grad_r
+  
   rewards = nn_r.get_rewards(feat_maps)
   n_rewards = []
   # for reward, feat_map in zip(rewards, feat_maps):
   #   n_rewards.append(np.reshape(reward, feat_map.shape[0]*feat_map.shape[1], order='F'))
   for reward in rewards:
-    n_rewards.append(np.reshape(reward, out_shape[0]*out_shape[1], order='F'))
-  # rewards = np.reshape(rewards, feat_map.shape[0]*feat_map.shape[1], order='F')
-  # norm_rewards = []
-  # for reward, feat_map in zip(rewards, feat_maps):
-  #   reward = np.reshape(reward, feat_map.shape[0] * feat_map.shape[1], order='F')
-  #   norm_reward = normalize(reward)
-  #   norm_rewards.append(norm_reward)
-  # return norm_rewards
+    n_rewards.append(np.reshape(reward, out_shape[0] * out_shape[1], order='F'))
   return n_rewards
+
