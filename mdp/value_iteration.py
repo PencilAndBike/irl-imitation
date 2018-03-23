@@ -11,7 +11,7 @@ import math
 import numpy as np
 
 
-def value_iteration(P_a, rewards, gamma, error=0.1, deterministic=True):
+def value_iteration(P_a, rewards, gamma, error=0.1, deterministic=True, max_itrs=10):
   """
   static value iteration function. Perhaps the most useful function in this repo
   
@@ -59,6 +59,8 @@ def value_iteration(P_a, rewards, gamma, error=0.1, deterministic=True):
     if np.max(np.abs(values_tmp-values)) < error:
       break
     itr += 1
+    if itr > max_itrs:
+      break
   
   print "value iteration {} until convergence".format(itr)
 

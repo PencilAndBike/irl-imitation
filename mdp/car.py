@@ -52,6 +52,7 @@ class LinkAndDiscTraj(object):
   
   
   def dot_pos(self, pos):
+    
     pos = (pos-self._origin)/0.2
     pos = [-pos[0], pos[1]]
     return np.array([int(round(pos[0])), int(round(pos[1]))])
@@ -109,10 +110,20 @@ class LinkAndDiscTraj(object):
         tiled_traj.append(tuple(traj[i+2]))
     return tiled_traj
     
+  def distile_traj(self, traj):
+    distiled_traj = [tuple(traj[0])]
+    for i in range(1, len(traj)):
+      x0, y0 = distiled_traj[-1]
+      x, y = traj[i]
+      if (x0+1, y0-1) == (x, y) or (x0+1, y0+1) == (x, y):
+        distiled_traj.append((x0+1, y0))
+      if (x0-1, y0-1) == (x, y) or (x0-1, y0+1) == (x, y):
+        distiled_traj.append((x0-1, y0))
+      distiled_traj.append((x, y))
+    return distiled_traj
     
   def discrete_pos(self, pos):
     return pos / np.array([self._grid_h, self._grid_w])
-  
   
   def discrete(self):
     doted_traj = self.dot()
@@ -125,6 +136,7 @@ class LinkAndDiscTraj(object):
       discreted_pos = tuple(self.discrete_pos(dot_pos))
       if discreted_pos not in discreted_traj:
         discreted_traj.append(discreted_pos)
+    discreted_traj = self.distile_traj(discreted_traj)
     return discreted_traj
   
 

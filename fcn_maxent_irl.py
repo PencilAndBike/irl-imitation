@@ -5,16 +5,15 @@ import mdp.value_iteration as value_iteration
 import img_utils
 import tf_utils
 from utils import *
+import time
 
 class FCNIRL:
-  def __init__(self, input_shape, out_shape, lr, n_h1=400, n_h2=300, l2=10, name='deep_irl_fc', gpu_fraction=0.2,
+  def __init__(self, input_shape, out_shape, lr, l2=10, name='deep_irl_fc', gpu_fraction=0.2,
                is_train=True):
     # self.n_input = n_input
     self.input_shape = input_shape
     self.out_shape = out_shape
     self.lr = lr
-    self.n_h1 = n_h1
-    self.n_h2 = n_h2
     self.name = name
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=gpu_fraction)
     self.is_train = tf.placeholder(tf.bool, name="is_train")
@@ -50,11 +49,11 @@ class FCNIRL:
       print "input_s shape: ", input_s.shape
       # reward = tf_utils.conv2d(input_s, 1, [1,1])
       # reward = tf_utils.conv2d(conv1, 1, [1,1])
-      conv1 = tf_utils.conv2d(input_s, 32, [4,4], stride=4, name='conv1')
+      conv1 = tf_utils.conv2d(input_s, 32, [8,8], stride=4, name='conv1')
       conv1 = tf_utils.bn(conv1, is_train=self.is_train, name='bn1')
-      conv2 = tf_utils.conv2d(conv1, 32, [2,2], stride=2, name='conv2')
+      conv2 = tf_utils.conv2d(conv1, 32, [8,8], stride=4, name='conv2')
       conv2 = tf_utils.bn(conv2, is_train=self.is_train, name='bn2')
-      conv3 = tf_utils.conv2d(conv2, 16, [2,2], stride=2, name='conv3')
+      conv3 = tf_utils.conv2d(conv2, 16, [4,4], stride=2, name='conv3')
       conv3 = tf_utils.bn(conv3, is_train=self.is_train, name='bn3')
       conv4 = tf_utils.conv2d(conv3, 16, [2,2], name='conv4')
       conv4 = tf_utils.bn(conv4, is_train=self.is_train, name='bn4')
@@ -116,7 +115,18 @@ def compute_state_visition_freq(P_a, gamma, trajs, policy, deterministic=True):
   #       mu[s, t + 1] = sum(
   #         [sum([mu[pre_s, t] * P_a[pre_s, s, a1] * policy[pre_s, a1] for a1 in range(N_ACTIONS)]) for pre_s in
   #          range(N_STATES)])
-
+  
+  # policy_hot = np.zeros((N_STATES, N_ACTIONS))
+  # policy_hot[:, policy] = 1
+  #
+  # P_a_T = P_a.transpose(0, 2, 1)
+  # SS = []
+  # for i in range(N_STATES):
+  #   SS.append(np.matmul(policy_hot[i], P_a_T[i]))
+  # SS = np.array(SS)
+  # for t in range(T):
+  #   mu[:, t+1] = np.matmul(SS, mu[:, t])
+    
   for t in range(T):
     for s in range(N_STATES):
       if deterministic:
@@ -175,7 +185,8 @@ def demo_sparse_svf(traj, n_states):
   return p
 
   
-def fcn_maxent_irl(t_feat_maps, out_shape, P_a, gamma, t_trajs, lr, n_iters, gpu_fraction, ckpt_path, batch_size=16):
+def fcn_maxent_irl(inputs, nn_r, P_a, gamma, t_trajs, lr, n_iters, gpu_fraction, ckpt_path, batch_size=16,
+                   max_itr=np.inf):
   """
   Maximum Entropy Inverse Reinforcement Learning (Maxent IRL)
 
@@ -194,16 +205,17 @@ def fcn_maxent_irl(t_feat_maps, out_shape, P_a, gamma, t_trajs, lr, n_iters, gpu
   """
   
   N_STATES, _, N_ACTIONS = np.shape(P_a)
+  out_shape = nn_r.out_shape
   
   # init nn model
-  nn_r = FCNIRL(t_feat_maps.shape[1:], out_shape, lr, 3, 3, gpu_fraction)
-  
   saver = tf.train.Saver(tf.global_variables())
+  itr_interval = n_iters / 20
   for itr in range(n_iters):
+    t = time.time()
     print "--------itr {}--------".format(itr)
     grad_rs = []
-    ids = np.random.randint(len(t_feat_maps), size=batch_size)
-    feat_maps = t_feat_maps[ids]
+    ids = np.random.randint(len(inputs), size=batch_size)
+    feat_maps = inputs[ids]
     trajs = [t_trajs[i] for i in ids]
     
     for i in range(batch_size):
@@ -212,55 +224,51 @@ def fcn_maxent_irl(t_feat_maps, out_shape, P_a, gamma, t_trajs, lr, n_iters, gpu
       # mu_D = demo_sparse_svf(traj, N_STATES)
       mu_D = demo_svf(traj, N_STATES)
       # print "mu_D:\n", mu_D
-      rewards = nn_r.get_rewards(feat_map)
+      reward = nn_r.get_rewards(feat_map, is_train=True)
       # print "rewards\n", rewards
-      rewards = np.reshape(rewards, N_STATES, order='F')
+      reward = np.reshape(reward, N_STATES, order='F')
       # rewards = np.reshape(rewards, feat_map.shape[1]*feat_map.shape[2], order='F')
-      _, policy = value_iteration.value_iteration(P_a, rewards, gamma, error=0.01, deterministic=True)
+      _, policy = value_iteration.value_iteration(P_a, reward, gamma, error=0.1, deterministic=True, max_itrs=max_itr)
       mu_exp = compute_state_visition_freq(P_a, gamma, [traj], policy, deterministic=True)
       # print "mu_exp:\n", mu_exp
       grad_r = mu_D - mu_exp
-      if itr == 0 or (itr + 1) % 10 == 0:
+      if itr == 0 or (itr + 1) % 20 == 0:
         print "grad_r: ", grad_r
       grad_r = np.reshape(grad_r, (out_shape[0], out_shape[1], 1), order='F')
       grad_rs.append(grad_r)
     grad_rs = np.array(grad_rs)
-    grad_theta, l2_loss, grad_norm = nn_r.apply_grads(feat_maps, grad_rs)
-    if itr == 0 or (itr+1) % 100 == 0:
+    grad_theta, l2_loss, grad_norm = nn_r.apply_grads(feat_maps, grad_rs, is_train=True)
+    if itr == 0 or (itr+1) % itr_interval == 0:
       saver.save(nn_r.sess, ckpt_path+"/model_{}.ckpt".format(itr))
-
-
-def test_model(feat_maps, out_shape, P_a, gamma, trajs, lr, n_iters, gpu_fraction, ckpt_path):
-  N_TRAJ = len(feat_maps)
+    print "itr time: ", time.time() - t
+    
+def test_model(inputs, nn_r, P_a, gamma, trajs, lr, n_iters, gpu_fraction, ckpt_path):
+  N_TRAJ = len(inputs)
+  out_shape = nn_r.out_shape
   N_STATES, _, N_ACTIONS = np.shape(P_a)
   # init nn model
-  nn_r = FCNIRL(feat_maps.shape[1:], out_shape, lr, 3, 3, gpu_fraction)
+  nn_r = FCNIRL(inputs.shape[1:], out_shape, lr, 3, 3, gpu_fraction)
   saver = tf.train.Saver(tf.global_variables())
   saver.restore(nn_r.sess, ckpt_path)
-  
+  n_rewards = []
   for i in range(N_TRAJ):
     print "VI traj {}".format(i)
     print "traj {}".format(i)
-    feat_map, traj = feat_maps[i], trajs[i]
+    feat_map, traj = inputs[i], trajs[i]
     feat_map = np.array([feat_map])
     # mu_D = demo_sparse_svf(traj, N_STATES)
     mu_D = demo_svf(traj, N_STATES)
     # print "mu_D:\n", mu_D
-    rewards = nn_r.get_rewards(feat_map)
+    reward = nn_r.get_rewards(feat_map, is_train=False)
     # print "rewards\n", rewards
-    rewards = np.reshape(rewards, N_STATES, order='F')
+    n_rewards.append(np.reshape(reward, out_shape[0] * out_shape[1], order='F'))
+    reward = np.reshape(reward, N_STATES, order='F')
     # rewards = np.reshape(rewards, feat_map.shape[1]*feat_map.shape[2], order='F')
-    _, policy = value_iteration.value_iteration(P_a, rewards, gamma, error=0.01, deterministic=True)
+    _, policy = value_iteration.value_iteration(P_a, reward, gamma, error=0.01, deterministic=True, max_itrs=np.inf)
     mu_exp = compute_state_visition_freq(P_a, gamma, [traj], policy, deterministic=True)
     # print "mu_exp:\n", mu_exp
     grad_r = mu_D - mu_exp
     print "grad_r: \n", grad_r
-  
-  rewards = nn_r.get_rewards(feat_maps)
-  n_rewards = []
-  # for reward, feat_map in zip(rewards, feat_maps):
-  #   n_rewards.append(np.reshape(reward, feat_map.shape[0]*feat_map.shape[1], order='F'))
-  for reward in rewards:
-    n_rewards.append(np.reshape(reward, out_shape[0] * out_shape[1], order='F'))
+
   return n_rewards
 

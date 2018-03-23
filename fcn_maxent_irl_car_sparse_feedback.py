@@ -17,8 +17,8 @@ import cv2
 Step = namedtuple('Step','cur_state action next_state reward done')
 
 PARSER = argparse.ArgumentParser(description=None)
-PARSER.add_argument('-hei', '--height', default=16, type=int, help='height of the grid map')
-PARSER.add_argument('-wid', '--width', default=16, type=int, help='width of the grid map')
+PARSER.add_argument('-hei', '--height', default=8, type=int, help='height of the grid map')
+PARSER.add_argument('-wid', '--width', default=8, type=int, help='width of the grid map')
 PARSER.add_argument('-img_hei', '--img_height', default=256, type=int, help='height of the img')
 PARSER.add_argument('-img_wid', '--img_width', default=256, type=int, help='width of the img')
 PARSER.add_argument('-g', '--gamma', default=0.9, type=float, help='discount factor')
@@ -26,15 +26,21 @@ PARSER.add_argument('-nd', '--n_demos', default=16, type=int, help='number of ex
 PARSER.add_argument('-lp', '--l_pos', default=7, type=int, help='length of concated positions')
 PARSER.add_argument('-lt', '--l_traj', default=10, type=int, help='length of discrete trajectory')
 PARSER.add_argument('-lr', '--learning_rate', default=0.02, type=float, help='learning rate')
-PARSER.add_argument('-ni', '--n_iters', default=2000, type=int, help='number of iterations')
+PARSER.add_argument('-ni', '--n_iters', default=40, type=int, help='number of iterations')
 PARSER.add_argument('-rd', '--record_dir', default="/home/pirate03/Downloads/prediction_data/crop256", type=str, \
                     help='recording data dir')
-PARSER.add_argument('-ld', '--log_dir', default="/home/pirate03/Downloads/prediction_data/crop256/exp/19", type=str, \
+PARSER.add_argument('-ld', '--log_dir', default="/home/pirate03/Downloads/prediction_data/crop256/exp/20", type=str, \
                     help='training log dir')
 PARSER.add_argument('-name', '--exp_name', default="gw10_fcn_sparse_feed", type=str, help='experiment name')
 PARSER.add_argument('-n_exp', '--n_exp', default=20, type=int, help='repeat experiment n times')
-PARSER.add_argument('-gpu_frac', '--gpu_fraction', default=0.4, type=float, help='gpu fraction')
+PARSER.add_argument('-gpu_frac', '--gpu_fraction', default=0.2, type=float, help='gpu fraction')
+PARSER.add_argument('-l2', '--l2', default=0., type=float, help='l2 norm')
 PARSER.add_argument('-term', '--terminal', default=True, type=bool, help='terminal or not when agent reach the goal')
+# PARSER.add_argument('-is_train', '--is_train', default=True, type=bool, help='train or test')
+PARSER.add_argument('--train', dest='is_train', action='store_true', help='train or test')
+PARSER.add_argument('--test', dest='is_train',action='store_false', help='train or test')
+PARSER.add_argument('-max_vi', '--max_vi', default=10000, type=int, help='value iteration max num')
+PARSER.set_defaults(is_train=True)
 ARGS = PARSER.parse_args()
 print ARGS
 
@@ -54,13 +60,15 @@ LOG_DIR = ARGS.log_dir
 EXP_NAME = ARGS.exp_name
 N_EXP = ARGS.n_exp
 GPU_FRACTION = ARGS.gpu_fraction
+L2 = ARGS.l2
 TERMINAL = ARGS.terminal
-
+IS_TRAIN = ARGS.is_train
+MAX_VI = ARGS.max_vi
 
 class CarIRLExp(object):
   def __init__(self, l_pos, l_traj, n_demos, rec_dir, log_dir, gamma=0.9,
                learning_rate=0.02, n_iters=20,
-               gpu_fraction=0.2, h=20, w=20, img_h=500, img_w=500):
+               gpu_fraction=0.2, l2=0.2, h=20, w=20, img_h=500, img_w=500, max_vi=10000):
     
     self._rec_dir = rec_dir
     self._imgs = self.get_imgs(rec_dir)
@@ -78,18 +86,22 @@ class CarIRLExp(object):
     self._learning_rate = learning_rate
     self._n_iters = n_iters
     self._gpu_fraction = gpu_fraction
+    self._l2 = l2
     self._h = h
     self._w = w
     self._img_h = img_h
     self._img_w = img_w
     # save_dir_exp = self._rec_dir+"/exp"
     # n = len(filter(lambda x: '.' not in x, os.listdir(save_dir_exp)))
+    self._log_dir = log_dir
     self._exp_result_path = log_dir+"/result"
-    if not os.path.exists(self._exp_result_path):
-      os.makedirs(self._exp_result_path)
+    # if not os.path.exists(self._exp_result_path):
+    #   os.makedirs(self._exp_result_path)
     self._ckpt_path = log_dir+"/ckpt"
-    if not os.path.exists(self._ckpt_path):
-      os.makedirs(self._ckpt_path)
+    print "ckpt_path: ", self._ckpt_path
+    self._max_vi = max_vi
+    # if not os.path.exists(self._ckpt_path):
+    #   os.makedirs(self._ckpt_path)
 
   @staticmethod
   def get_imgs(rec_dir):
@@ -155,18 +167,7 @@ class CarIRLExp(object):
       mtraj = self.get_stack_traj(id)
       feat_maps.append(mtraj.img)
       trajs.append(mtraj.traj)
-    return np.array(ids), np.array(feat_maps), np.array(trajs)
-  
-  
-  def rand_demo_trajs(self):
-    ids = np.random.randint(self._L-self._l_pos-5, size=self._n_demos)
-    feat_maps = []
-    trajs = []
-    for id in ids:
-      mtraj = self.get_stack_traj(id)
-      feat_maps.append(mtraj.img)
-      trajs.append(mtraj.traj)
-    return np.array(ids), np.array(feat_maps), np.array(trajs)
+    return np.array(feat_maps), np.array(trajs)
     
     
   def save_plt(self, name, figsize, traj, rewards, values, policy):
@@ -233,40 +234,50 @@ class CarIRLExp(object):
   def train(self, ids=[]):
     print "getting demo trajs..."
     t = time.time()
-    ids, feat_maps, demo_trajs = self.get_demo_trajs(ids)
+    inputs, demo_trajs = self.get_demo_trajs(ids)
     print "got demo trajs: {}s".format(time.time()-t)
     wraped_trajs = self.wrap_trajs(demo_trajs)
     print "Run fcn_maxent_irl..."
-    fcn_maxent_irl(feat_maps, np.array([self._h, self._w]), self._P_a, self._gamma, wraped_trajs,
-                             self._learning_rate, self._n_iters, self._gpu_fraction, self._ckpt_path, self._n_demos)
+    nn_r = FCNIRL(inputs.shape[1:], np.array([self._h, self._w]), self._learning_rate, l2=self._l2,
+                  gpu_fraction=self._gpu_fraction)
+    fcn_maxent_irl(inputs, nn_r, self._P_a, self._gamma, wraped_trajs,
+                   self._learning_rate, self._n_iters, self._gpu_fraction, self._ckpt_path, self._n_demos,
+                   max_itr=self._max_vi)
     print "fcn_maxent_irl is done"
 
 
   def test(self, ids):
-    ids, feat_maps, demo_trajs = self.get_demo_trajs(ids)
+    names = os.listdir(self._log_dir)
+    n_results = len(filter(lambda x: 'result' in x, names))
+    self._exp_result_path = self._log_dir+"/result"+str(n_results)
+    if not os.path.exists(self._exp_result_path):
+      os.makedirs(self._exp_result_path)
+    inputs, demo_trajs = self.get_demo_trajs(ids)
     trajs = self.wrap_trajs(demo_trajs)
-    nn_r = FCNIRL(feat_maps.shape[1:], np.array([self._h, self._w]), self._learning_rate, 3, 3, self._gpu_fraction)
+    nn_r = FCNIRL(inputs.shape[1:], np.array([self._h, self._w]), self._learning_rate, l2=self._l2,
+                  gpu_fraction=self._gpu_fraction)
     saver = tf.train.Saver(tf.global_variables())
     saver.restore(nn_r.sess, self._ckpt_path+"/model_"+str(self._n_iters-1)+".ckpt")
-    N_TRAJ = len(feat_maps)
+    N_TRAJ = len(inputs)
     N_STATES, _, N_ACTIONS = np.shape(self._P_a)
     for i in range(N_TRAJ):
-      print "run demo {}".format(i)
-      feat_map, traj = feat_maps[i], trajs[i]
+      print "run demo {}".format(ids[i])
+      feat_map, traj = inputs[i], trajs[i]
       feat_map = np.array([feat_map])
       # mu_D = demo_sparse_svf(traj, N_STATES)
       mu_D = demo_svf(traj, N_STATES)
       # print "mu_D:\n", mu_D
-      reward = nn_r.get_rewards(feat_map)
+      reward = nn_r.get_rewards(feat_map, is_train=False)
       # print "rewards\n", rewards
       reward = np.reshape(reward, N_STATES, order='F')
-      value, policy = value_iteration.value_iteration(self._P_a, reward, self._gamma, error=0.01, deterministic=True)
+      value, policy = value_iteration.value_iteration(self._P_a, reward, self._gamma, error=0.1, deterministic=True,
+                                                      max_itrs=self._max_vi)
       mu_exp = compute_state_visition_freq(self._P_a, self._gamma, [traj], policy, deterministic=True)
       # print "mu_exp:\n", mu_exp
       grad_r = mu_D - mu_exp
       print "grad_r: \n", grad_r
       cv2.imwrite(self._exp_result_path + '/' + str(i) + '_' + str(ids[i]) + ".png",
-                  feat_maps[i][:, :, :3])
+                  inputs[i][:, :, :3])
       self.save_plt(str(i), (4 * self._w, self._h), demo_trajs[i], reward, value, policy)
 
 
@@ -278,9 +289,18 @@ def test_heatmap():
   plt.close()
     
 if __name__ == "__main__":
-  car_irl_exp = CarIRLExp(L_POS, L_TRAJ, N_DEMOS, RECORD_DIR, LOG_DIR, n_iters=N_ITERS, h=H, w=W, img_h=IH, img_w=IW)
-  car_irl_exp.train(range(450))
+  car_irl_exp = CarIRLExp(L_POS, L_TRAJ, N_DEMOS, RECORD_DIR, LOG_DIR, n_iters=N_ITERS, gpu_fraction=GPU_FRACTION,
+                          l2=L2, h=H, w=W, img_h=IH, img_w=IW, max_vi=MAX_VI)
+  # car_irl_exp.test(range(450, 500))
+  print "IS TRAIN OR NOT: ", IS_TRAIN
+  if IS_TRAIN:
+    print "we are training"
+    # ids = np.random.randint(450, size=32)
+    ids = range(450)
+    car_irl_exp.train(ids)
+  else:
+    print "we are testing"
+    car_irl_exp.test(range(0, 450))
   # car_irl_exp.test(range(68, 75)+range(116,126)+range(178,185)+range(450, 460)+range(499,502))
   # ckpt_path = "/home/pirate03/PycharmProjects/irl-imitation/ckpt4/model_1499.ckpt"
   # car_irl_exp.test('test', ckpt_path, ids=[3, 4, 5, 6])
-#
