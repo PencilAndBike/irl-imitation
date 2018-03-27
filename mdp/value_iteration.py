@@ -31,7 +31,8 @@ def value_iteration(P_a, rewards, gamma, error=0.1, deterministic=True, max_itrs
   """
   N_STATES, _, N_ACTIONS = np.shape(P_a)
 
-  values = np.zeros([N_STATES, 1])
+  # values = np.zeros([N_STATES, 1])
+  values = np.random.rand(N_STATES, 1)
   rewards = rewards[:, np.newaxis]
   P_a_T = P_a.transpose(0, 2, 1)
 
