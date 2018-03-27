@@ -17,8 +17,8 @@ import cv2
 Step = namedtuple('Step','cur_state action next_state reward done')
 
 PARSER = argparse.ArgumentParser(description=None)
-PARSER.add_argument('-hei', '--height', default=8, type=int, help='height of the grid map')
-PARSER.add_argument('-wid', '--width', default=8, type=int, help='width of the grid map')
+PARSER.add_argument('-hei', '--height', default=16, type=int, help='height of the grid map')
+PARSER.add_argument('-wid', '--width', default=16, type=int, help='width of the grid map')
 PARSER.add_argument('-img_hei', '--img_height', default=256, type=int, help='height of the img')
 PARSER.add_argument('-img_wid', '--img_width', default=256, type=int, help='width of the img')
 PARSER.add_argument('-g', '--gamma', default=0.9, type=float, help='discount factor')
@@ -26,10 +26,10 @@ PARSER.add_argument('-nd', '--n_demos', default=16, type=int, help='number of ex
 PARSER.add_argument('-lp', '--l_pos', default=7, type=int, help='length of concated positions')
 PARSER.add_argument('-lt', '--l_traj', default=10, type=int, help='length of discrete trajectory')
 PARSER.add_argument('-lr', '--learning_rate', default=0.02, type=float, help='learning rate')
-PARSER.add_argument('-ni', '--n_iters', default=200000, type=int, help='number of iterations')
+PARSER.add_argument('-ni', '--n_iters', default=10000, type=int, help='number of iterations')
 PARSER.add_argument('-rd', '--record_dir', default="/home/pirate03/Downloads/prediction_data/crop256", type=str, \
                     help='recording data dir')
-PARSER.add_argument('-ld', '--log_dir', default="/home/pirate03/Downloads/prediction_data/crop256/exp/20", type=str, \
+PARSER.add_argument('-ld', '--log_dir', default="/home/pirate03/Downloads/prediction_data/crop256/exp/66", type=str, \
                     help='training log dir')
 PARSER.add_argument('-name', '--exp_name', default="gw10_fcn_sparse_feed", type=str, help='experiment name')
 PARSER.add_argument('-n_exp', '--n_exp', default=20, type=int, help='repeat experiment n times')
@@ -145,20 +145,54 @@ class CarIRLExp(object):
     for disc_pos in disc_traj:
       idx_traj.append(self._car.pos2idx(disc_pos))
     return MTraj(i, img, idx_traj)
+  
+  
+  def dot_pos(self, pre_pos, pos):
+    origin = pre_pos + np.array([self._img_h/2, -self._img_w/2]) * 0.2
+    pos = (pos-origin)/0.2
+    pos = [-pos[0], pos[1]]
+    return np.array([int(round(pos[0])), int(round(pos[1]))])
+
+  def render_car(self, x, y, theta, l=24.0, w=12.0):
+    pass
 
   def get_stack_traj(self, i):
     traj = []
-    img1, img2, img3 = self._imgs[i], self._imgs[i+1], self._imgs[i+2]
-    img = np.concatenate((img1,img2,img3), axis=-1)
+    # img1, img2, img3 = self._imgs[i], self._imgs[i+1], self._imgs[i+2]
+    img1 = self._imgs[i]
     for j in range(self._l_pos):
       traj.append(self._poses[i+j])
-    disc_traj = LinkAndDiscTraj(traj=traj, img_h=self._img_h, img_w=self._img_w,
+    disc_traj, goal = LinkAndDiscTraj(traj=traj, img_h=self._img_h, img_w=self._img_w,
                                 grid_h=self._grid_h, grid_w=self._grid_w, idx=i).discrete()
     idx_traj = []
     for disc_pos in disc_traj:
       idx_traj.append(self._car.pos2idx(disc_pos))
+    
+    # Currently just use simple square as the goal. In fact, use car shape could be better.
+    goal_img = np.zeros([self._img_h, self._img_w, 1])
+    img1[goal[0]-6:goal[0]+6, goal[1]-6:goal[1]+6, :] = 255
+    # goal_img = goal_img[np.newaxis, :, :, np.newaxis]
+    img = np.concatenate((img1, goal_img), axis=-1)
     return MTraj(i, img, idx_traj)
 
+  def test_stack_goal_img(self, i):
+    img = self._imgs[i]
+    traj = []
+    for j in range(self._l_pos):
+      traj.append(self._poses[i + j])
+    disc_traj, goal = LinkAndDiscTraj(traj=traj, img_h=self._img_h, img_w=self._img_w,
+                                grid_h=self._grid_h, grid_w=self._grid_w, idx=i).discrete()
+    idx_traj = []
+    for disc_pos in disc_traj:
+      idx_traj.append(self._car.pos2idx(disc_pos))
+
+    # Currently just use simple square as the goal. In fact, use car shape could be better.
+    # goal = self.dot_pos(traj[0], traj[-1])
+    # goal_img = np.zeros(img.shape)
+    # goal_img[goal[0] - 10:goal[0] + 10, goal[1] - 10:goal[1] + 10, :] = 255
+    # goal_img = goal_img[np.newaxis, :, :, np.newaxis]
+    img[goal[0]-5:goal[0]+5, goal[1]-5:goal[1]+5, -1] = 255
+    cv2.imwrite(self._exp_result_path+"/"+str(i)+".jpg", img)
 
   def get_demo_trajs(self, ids):
     feat_maps = []
@@ -246,6 +280,19 @@ class CarIRLExp(object):
     print "fcn_maxent_irl is done"
 
 
+  def simple_train(self):
+    ids = np.random.randint(450, size=self._n_demos)
+    # ids = range(448, 455)
+    inputs, demo_trajs = self.get_demo_trajs(ids)
+    wraped_trajs = self.wrap_trajs(demo_trajs)
+    nn_r = FCNIRL(inputs.shape[1:], np.array([self._h, self._w]), self._learning_rate, l2=self._l2,
+                  gpu_fraction=self._gpu_fraction)
+    simple_fcn_maxent_irl(inputs, nn_r, self._P_a, self._gamma, wraped_trajs,
+                   self._learning_rate, self._n_iters, self._gpu_fraction, self._ckpt_path, self._n_demos,
+                   max_itr=self._max_vi, ids=ids)
+    print "fcn_maxent_irl is done"
+
+
   def test(self, ids):
     names = os.listdir(self._log_dir)
     n_results = len(filter(lambda x: 'result' in x, names))
@@ -296,11 +343,17 @@ if __name__ == "__main__":
   if IS_TRAIN:
     print "we are training"
     # ids = np.random.randint(450, size=32)
-    ids = range(450)
-    car_irl_exp.train(ids)
+    # ids = range(20)
+    car_irl_exp.train(range(400))
+    # car_irl_exp.simple_train()
   else:
     print "we are testing"
-    car_irl_exp.test(range(0, 510))
+    # car_irl_exp.test(range(0, 510))
+    for i in range(20):
+      car_irl_exp.test_stack_goal_img(i)
   # car_irl_exp.test(range(68, 75)+range(116,126)+range(178,185)+range(450, 460)+range(499,502))
   # ckpt_path = "/home/pirate03/PycharmProjects/irl-imitation/ckpt4/model_1499.ckpt"
   # car_irl_exp.test('test', ckpt_path, ids=[3, 4, 5, 6])
+  
+  
+  # test_heatmap()

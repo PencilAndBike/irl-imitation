@@ -127,6 +127,8 @@ class LinkAndDiscTraj(object):
   
   def discrete(self):
     doted_traj = self.dot()
+    goal = doted_traj[-1]
+    goal = np.array([goal[0], goal[1]])
     # doted_traj = self.tile_traj(doted_traj)
     discreted_traj = []
     for dot_pos in doted_traj:
@@ -136,8 +138,8 @@ class LinkAndDiscTraj(object):
       discreted_pos = tuple(self.discrete_pos(dot_pos))
       if discreted_pos not in discreted_traj:
         discreted_traj.append(discreted_pos)
-    discreted_traj = self.distile_traj(discreted_traj)
-    return discreted_traj
+    # discreted_traj = self.distile_traj(discreted_traj)
+    return discreted_traj, goal
   
 
 

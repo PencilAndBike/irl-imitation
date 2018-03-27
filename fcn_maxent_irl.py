@@ -49,13 +49,15 @@ class FCNIRL:
       print "input_s shape: ", input_s.shape
       # reward = tf_utils.conv2d(input_s, 1, [1,1])
       # reward = tf_utils.conv2d(conv1, 1, [1,1])
-      conv1 = tf_utils.conv2d(input_s, 32, [4,4], stride=2, name='conv1')
+      conv1 = tf_utils.conv2d(input_s, 32, [8,8], stride=4, name='conv1')
+      # conv1 = tf_utils.max_pool(conv1)
       conv1 = tf_utils.bn(conv1, is_train=self.is_train, name='bn1')
       conv2 = tf_utils.conv2d(conv1, 32, [4,4], stride=2, name='conv2')
+      # conv2 = tf_utils.max_pool(conv2)
       conv2 = tf_utils.bn(conv2, is_train=self.is_train, name='bn2')
-      conv3 = tf_utils.conv2d(conv2, 16, [4,4], stride=2, name='conv3')
+      conv3 = tf_utils.conv2d(conv2, 32, [4,4], stride=2, name='conv3')
       conv3 = tf_utils.bn(conv3, is_train=self.is_train, name='bn3')
-      conv4 = tf_utils.conv2d(conv3, 16, [2,2], name='conv4')
+      conv4 = tf_utils.conv2d(conv3, 64, [2,2], name='conv4')
       conv4 = tf_utils.bn(conv4, is_train=self.is_train, name='bn4')
       reward = tf_utils.conv2d(conv4, 1, [1,1], name='reward')
       # reward = tf_utils.conv2d(conv1, 1, [1,1])
@@ -106,8 +108,6 @@ def compute_state_visition_freq(P_a, gamma, trajs, policy, deterministic=True):
   for traj in trajs:
     mu[traj[0].cur_state, 0] += 1
   mu[:, 0] = mu[:, 0] / len(trajs)
-  
-  mu2 = np.copy(mu)
   
   # for s in range(N_STATES):
   #   for t in range(T - 1):
@@ -212,7 +212,6 @@ def fcn_maxent_irl(inputs, nn_r, P_a, gamma, t_trajs, lr, n_iters, gpu_fraction,
   
   # init nn model
   saver = tf.train.Saver(tf.global_variables())
-  itr_interval = n_iters / 20
   for itr in range(n_iters):
     t = time.time()
     print "--------itr {}--------".format(itr)
@@ -238,11 +237,13 @@ def fcn_maxent_irl(inputs, nn_r, P_a, gamma, t_trajs, lr, n_iters, gpu_fraction,
       grad_r = np.reshape(grad_r, (out_shape[0], out_shape[1], 1), order='F')
       grad_rs.append(grad_r)
     grad_rs = np.array(grad_rs)
+    print "grad_rs: ", grad_rs
     grad_theta, l2_loss, grad_norm = nn_r.apply_grads(feat_maps, grad_rs, is_train=True)
     if itr == 0 or (itr + 1) % 20 == 0:
-      print "grad_r: ", np.mean(grad_rs, axis=0)
+      # print "grad_r: ", np.mean(grad_rs, axis=0).reshape(np.dot(*out_shape))[::8]
+      print "grad_r: ", np.mean(grad_rs)
 
-    if itr == 0 or (itr+1) % itr_interval == 0:
+    if itr==0 or (itr+1)%50==0 or (itr+1)==n_iters:
       saver.save(nn_r.sess, ckpt_path+"/model_{}.ckpt".format(itr))
     print "itr time: ", time.time() - t
     
