@@ -237,12 +237,10 @@ def fcn_maxent_irl(inputs, nn_r, P_a, gamma, t_trajs, lr, n_iters, gpu_fraction,
       grad_r = np.reshape(grad_r, (out_shape[0], out_shape[1], 1), order='F')
       grad_rs.append(grad_r)
     grad_rs = np.array(grad_rs)
-    print "grad_rs: ", grad_rs
     grad_theta, l2_loss, grad_norm = nn_r.apply_grads(feat_maps, grad_rs, is_train=True)
     if itr == 0 or (itr + 1) % 20 == 0:
-      # print "grad_r: ", np.mean(grad_rs, axis=0).reshape(np.dot(*out_shape))[::8]
-      print "grad_r: ", np.mean(grad_rs)
-
+      print "grad_mean_8: ", np.mean(grad_rs, axis=0).reshape(np.dot(*out_shape))[::8]
+      print "grad_var: ", np.var(grad_rs)
     if itr==0 or (itr+1)%50==0 or (itr+1)==n_iters:
       saver.save(nn_r.sess, ckpt_path+"/model_{}.ckpt".format(itr))
     print "itr time: ", time.time() - t

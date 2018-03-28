@@ -182,6 +182,7 @@ class CarIRLExp(object):
       traj.append(self._poses[i + j])
     disc_traj, goal = LinkAndDiscTraj(traj=traj, img_h=self._img_h, img_w=self._img_w,
                                 grid_h=self._grid_h, grid_w=self._grid_w, idx=i).discrete()
+    print "goal: ", goal
     idx_traj = []
     for disc_pos in disc_traj:
       idx_traj.append(self._car.pos2idx(disc_pos))
@@ -191,7 +192,7 @@ class CarIRLExp(object):
     # goal_img = np.zeros(img.shape)
     # goal_img[goal[0] - 10:goal[0] + 10, goal[1] - 10:goal[1] + 10, :] = 255
     # goal_img = goal_img[np.newaxis, :, :, np.newaxis]
-    img[goal[0]-5:goal[0]+5, goal[1]-5:goal[1]+5, -1] = 255
+    img[max(goal[0]-10,0):goal[0]+10, max(goal[1]-10,0):goal[1]+10, -1] = 255
     cv2.imwrite(self._exp_result_path+"/"+str(i)+".jpg", img)
 
   def get_demo_trajs(self, ids):
@@ -348,9 +349,9 @@ if __name__ == "__main__":
     # car_irl_exp.simple_train()
   else:
     print "we are testing"
-    car_irl_exp.test(range(0, 510))
-    # for i in range(20):
-    #   car_irl_exp.test_stack_goal_img(i)
+    # car_irl_exp.test(range(0, 510))
+    for i in range(25, 30):
+      car_irl_exp.test_stack_goal_img(i)
   # car_irl_exp.test(range(68, 75)+range(116,126)+range(178,185)+range(450, 460)+range(499,502))
   # ckpt_path = "/home/pirate03/PycharmProjects/irl-imitation/ckpt4/model_1499.ckpt"
   # car_irl_exp.test('test', ckpt_path, ids=[3, 4, 5, 6])
