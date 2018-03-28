@@ -170,7 +170,7 @@ class CarIRLExp(object):
     
     # Currently just use simple square as the goal. In fact, use car shape could be better.
     goal_img = np.zeros([self._img_h, self._img_w, 1])
-    img1[goal[0]-6:goal[0]+6, goal[1]-6:goal[1]+6, :] = 255
+    goal_img[goal[0]-6:goal[0]+6, goal[1]-6:goal[1]+6, :] = 100
     # goal_img = goal_img[np.newaxis, :, :, np.newaxis]
     img = np.concatenate((img1, goal_img), axis=-1)
     return MTraj(i, img, idx_traj)
@@ -348,9 +348,9 @@ if __name__ == "__main__":
     # car_irl_exp.simple_train()
   else:
     print "we are testing"
-    # car_irl_exp.test(range(0, 510))
-    for i in range(20):
-      car_irl_exp.test_stack_goal_img(i)
+    car_irl_exp.test(range(0, 510))
+    # for i in range(20):
+    #   car_irl_exp.test_stack_goal_img(i)
   # car_irl_exp.test(range(68, 75)+range(116,126)+range(178,185)+range(450, 460)+range(499,502))
   # ckpt_path = "/home/pirate03/PycharmProjects/irl-imitation/ckpt4/model_1499.ckpt"
   # car_irl_exp.test('test', ckpt_path, ids=[3, 4, 5, 6])
