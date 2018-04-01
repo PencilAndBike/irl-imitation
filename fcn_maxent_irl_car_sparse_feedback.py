@@ -26,10 +26,10 @@ PARSER.add_argument('-nd', '--n_demos', default=16, type=int, help='number of ex
 PARSER.add_argument('-lp', '--l_pos', default=7, type=int, help='length of concated positions')
 PARSER.add_argument('-lt', '--l_traj', default=10, type=int, help='length of discrete trajectory')
 PARSER.add_argument('-lr', '--learning_rate', default=0.02, type=float, help='learning rate')
-PARSER.add_argument('-ni', '--n_iters', default=10000, type=int, help='number of iterations')
+PARSER.add_argument('-ni', '--n_iters', default=100000, type=int, help='number of iterations')
 PARSER.add_argument('-rd', '--record_dir', default="/home/pirate03/Downloads/prediction_data/crop256", type=str, \
                     help='recording data dir')
-PARSER.add_argument('-ld', '--log_dir', default="/home/pirate03/Downloads/prediction_data/crop256/exp/66", type=str, \
+PARSER.add_argument('-ld', '--log_dir', default="/home/pirate03/Downloads/prediction_data/crop256/exp/67", type=str, \
                     help='training log dir')
 PARSER.add_argument('-name', '--exp_name', default="gw10_fcn_sparse_feed", type=str, help='experiment name')
 PARSER.add_argument('-n_exp', '--n_exp', default=20, type=int, help='repeat experiment n times')
@@ -315,7 +315,7 @@ class CarIRLExp(object):
       # mu_D = demo_sparse_svf(traj, N_STATES)
       mu_D = demo_svf(traj, N_STATES)
       # print "mu_D:\n", mu_D
-      reward = nn_r.get_rewards(feat_map, is_train=False)
+      reward = nn_r.get_rewards(feat_map, is_train=True)
       # print "rewards\n", rewards
       reward = np.reshape(reward, N_STATES, order='F')
       value, policy = value_iteration.value_iteration(self._P_a, reward, self._gamma, error=0.1, deterministic=True,
@@ -349,12 +349,10 @@ if __name__ == "__main__":
     # car_irl_exp.simple_train()
   else:
     print "we are testing"
-    # car_irl_exp.test(range(0, 510))
-    for i in range(25, 30):
-      car_irl_exp.test_stack_goal_img(i)
+    car_irl_exp.test(range(450))
+    # for i in range(30, 50):
+    #   car_irl_exp.test_stack_goal_img(i)
   # car_irl_exp.test(range(68, 75)+range(116,126)+range(178,185)+range(450, 460)+range(499,502))
   # ckpt_path = "/home/pirate03/PycharmProjects/irl-imitation/ckpt4/model_1499.ckpt"
   # car_irl_exp.test('test', ckpt_path, ids=[3, 4, 5, 6])
-  
-  
   # test_heatmap()
