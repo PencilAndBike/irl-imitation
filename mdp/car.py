@@ -5,7 +5,7 @@ import tensorflow as tf
 import random
 
 Step = namedtuple('Step', 'pos next_pos reward')
-MTraj = namedtuple('MTraj', 'id img traj')
+MTraj = namedtuple('MTraj', 'img traj')
 # MTraj = namedtuple('MTraj', 'stacking_state_map traj')
 
 # def discrete(img, pos, next_pos):
@@ -144,11 +144,7 @@ class LinkAndDiscTraj(object):
 
 
 class Car(object):
-  def __init__(self, f_dir, l, height=20, width=20, terminals={}):
-    self._imgs = []
-    self._poses = []
-    self._L = len(self._imgs)
-    self._l = l
+  def __init__(self, height=20, width=20, terminals={}):
     self.height = height
     self.width = width
     # self.neighbors = [(-1, -1), (-1, 0), (-1, 1),

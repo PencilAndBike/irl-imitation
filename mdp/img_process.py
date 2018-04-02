@@ -5,7 +5,8 @@ import numpy as np
 class ProcessCarImg(object):
   def __init__(self, f_dir):
     self._f_dir = f_dir
-    self._ego_dir = f_dir+'/ego'
+    # self._ego_dir = f_dir+'/ego'
+    self._ego_dir = None
     self._lin_dir = f_dir+'/lin'
     self._obs_dir = f_dir+'/obs'
     self._mix_dir = f_dir+'/mix'
@@ -38,10 +39,10 @@ class ProcessCarImg(object):
       # np.stack((ego_img, lin_img, obj_img), axis=0)
   
   def concat(self):
-    ego_imgs = ProcessCarImg.read_imgs(self._ego_dir)[:,:,:,np.newaxis]
-    lin_imgs = ProcessCarImg.read_imgs(self._lin_dir)[:,:,:,np.newaxis]
-    obs_imgs = ProcessCarImg.read_imgs(self._obs_dir)[:,:,:,np.newaxis]
-    concated_imgs = np.concatenate((ego_imgs, lin_imgs, obs_imgs), axis=-1)
+    # ego_imgs = ProcessCarImg.read_imgs(self._ego_dir)[:,:,:,np.newaxis]
+    lin_imgs = self.crop_imgs(ProcessCarImg.read_imgs(self._lin_dir), cent_h=256, cent_w=256)[:,:,:,np.newaxis]
+    obs_imgs = self.crop_imgs(ProcessCarImg.read_imgs(self._obs_dir), cent_h=256, cent_w=256)[:,:,:,np.newaxis]
+    concated_imgs = np.concatenate((lin_imgs, obs_imgs), axis=-1)
     return concated_imgs
 
   
@@ -76,7 +77,7 @@ class ProcessCarImg(object):
       cv2.imwrite(save_path+'/'+str(i)+'.png', img)
   
   
-  def save_crop(self, cent_h=200, cent_w=200):
+  def save_crop(self, cent_h=200, cent_w=200, save_dir=None):
     crop_ego_imgs, crop_lin_imgs, crop_obs_imgs, crop_mix_imgs = self.crop(cent_h, cent_w)
     self.save_imgs(crop_ego_imgs, 'crop_ego')
     self.save_imgs(crop_lin_imgs, 'crop_lin')
@@ -103,9 +104,12 @@ class ProcessCarImg(object):
     
     
 if __name__ == '__main__':
-  f_dir = '/home/pirate03/Downloads/prediction_data'
-  pci = ProcessCarImg(f_dir)
-  pci.save_crop(cent_h=256, cent_w=256)
+  f_dir = '/home/pirate03/Downloads/carsim/train'
+  eps_names = sorted(os.listdir(f_dir))
+  for eps_name in eps_names:
+    rec_dir = f_dir+'/'+eps_name
+    pci = ProcessCarImg(rec_dir)
+    pci.save_crop(cent_h=256, cent_w=256)
   # pci.save_resize((20,20))
   # mix_imgs = pci.read_imgs(f_dir+'/mix')
   # mix_imgs = pci.crop_imgs(mix_imgs, 120, 120)

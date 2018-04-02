@@ -241,6 +241,7 @@ def fcn_maxent_irl(inputs, nn_r, P_a, gamma, t_trajs, lr, n_iters, gpu_fraction,
     if itr == 0 or (itr + 1) % 20 == 0:
       print "grad_mean_8: ", np.mean(grad_rs, axis=0).reshape(np.dot(*out_shape))[::8]
       print "grad_var: ", np.var(grad_rs)
+      print "grad_diff: ", np.mean(np.abs(grad_rs))
     if itr==0 or (itr+1)%50==0 or (itr+1)==n_iters:
       saver.save(nn_r.sess, ckpt_path+"/model_{}.ckpt".format(itr))
     print "itr time: ", time.time() - t

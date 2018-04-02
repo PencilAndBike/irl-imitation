@@ -27,9 +27,9 @@ PARSER.add_argument('-lp', '--l_pos', default=7, type=int, help='length of conca
 PARSER.add_argument('-lt', '--l_traj', default=10, type=int, help='length of discrete trajectory')
 PARSER.add_argument('-lr', '--learning_rate', default=0.02, type=float, help='learning rate')
 PARSER.add_argument('-ni', '--n_iters', default=100000, type=int, help='number of iterations')
-PARSER.add_argument('-rd', '--record_dir', default="/home/pirate03/Downloads/prediction_data/crop256", type=str, \
+PARSER.add_argument('-rd', '--record_dir', default="/home/pirate03/Downloads/carsim/simple_train", type=str, \
                     help='recording data dir')
-PARSER.add_argument('-ld', '--log_dir', default="/home/pirate03/Downloads/prediction_data/crop256/exp/67", type=str, \
+PARSER.add_argument('-ld', '--log_dir', default="/home/pirate03/Downloads/carsim/exp/0", type=str, \
                     help='training log dir')
 PARSER.add_argument('-name', '--exp_name', default="gw10_fcn_sparse_feed", type=str, help='experiment name')
 PARSER.add_argument('-n_exp', '--n_exp', default=20, type=int, help='repeat experiment n times')
@@ -71,14 +71,15 @@ class CarIRLExp(object):
                gpu_fraction=0.2, l2=0.2, h=20, w=20, img_h=500, img_w=500, max_vi=10000):
     
     self._rec_dir = rec_dir
-    self._imgs = self.get_imgs(rec_dir)
-    self._poses = self.get_poses(rec_dir)
-    self._L = len(self._imgs)
+    # self._rec_train_dir = rec_dir + '/train'
+    # self._rec_test_dir = rec_dir + '/test'
+    self._imgs_set, self._poses_set = self.get_imgs_and_poses_set(rec_dir)
+    
     self._l_pos = l_pos
     self._l_traj = l_traj
     self._n_demos = n_demos
     self._grid_h, self._grid_w = img_h/h, img_w/w
-    self._car = Car(rec_dir, l_pos, h, w)
+    self._car = Car(h, w)
     print "getting car's transition mat..."
     self._P_a = self._car.get_transition_mat()
     print "got car's transition mat"
@@ -102,108 +103,141 @@ class CarIRLExp(object):
     self._max_vi = max_vi
     # if not os.path.exists(self._ckpt_path):
     #   os.makedirs(self._ckpt_path)
-
-  @staticmethod
-  def get_imgs(rec_dir):
+    
+    
+  def get_imgs_and_poses_set(self, rec_dir):
+    eps_names = sorted(os.listdir(rec_dir))
+    imgs_set = []
+    poses_set = []
+    for eps_name in eps_names:
+      try:
+        imgs_set.append(self.get_imgs(rec_dir+'/'+eps_name)[:-5])
+        poses_set.append(self.get_poses(rec_dir+'/'+eps_name)[:-5])
+      except Exception as e:
+        print eps_name, ": ", e
+      
+    return imgs_set, poses_set
+    
+    
+  def get_imgs(self, rec_dir):
+    # print rec_dir
     return ProcessCarImg(rec_dir).concat()
     
-
+    
   def get_poses(self, rec_dir):
     status_path = rec_dir+'/status.txt'
     poses = []
     with open(status_path) as f:
       lines = f.readlines()
       for i, line in enumerate(lines):
-        info = map(float, line.split())
+        info = map(float, line.split(','))
         # poses.append([info[1], info[2], info[4]])
-        poses.append([info[2], info[1]])
+        poses.append([info[4], info[3]])
     return np.array(poses)
 
-
-  def rand_traj(self):
-    i = np.random.randint(self._L - self._l_pos)
-    traj = []
-    img = self._imgs[i]
-    for j in range(self._l_pos):
-      traj.append(self._poses[i+j])
-    disc_traj = LinkAndDiscTraj(traj=traj, img_h=self._img_h, img_w=self._img_w,
-                                grid_h=self._grid_h, grid_w=self._grid_w).discrete()
-    idx_traj = []
-    for disc_pos in disc_traj:
-      idx_traj.append(self._car.pos2idx(disc_pos))
-    return MTraj(i, img, idx_traj)
-    # return MTraj(img, disc_traj)
-
-  def get_traj(self, i):
-    traj = []
-    img = self._imgs[i]
-    for j in range(self._l_pos):
-      traj.append(self._poses[i+j])
-    disc_traj = LinkAndDiscTraj(traj=traj, img_h=self._img_h, img_w=self._img_w,
-                                grid_h=self._grid_h, grid_w=self._grid_w, idx=i).discrete()
-    idx_traj = []
-    for disc_pos in disc_traj:
-      idx_traj.append(self._car.pos2idx(disc_pos))
-    return MTraj(i, img, idx_traj)
   
+  def get_stack_trajs(self, imgs, poses):
+    assert len(imgs) == len(poses)
+    mtrajs = []
+    for i in range(len(imgs)-self._l_pos):
+      traj = poses[i:i+self._l_pos]
+      disc_traj, goal = LinkAndDiscTraj(traj=traj, img_h=self._img_h, img_w=self._img_w,
+                                  grid_h=self._grid_h, grid_w=self._grid_w, idx=i).discrete()
+      idx_traj = []
+      for disc_pos in disc_traj:
+        idx_traj.append(self._car.pos2idx(disc_pos))
+      goal_img = np.zeros([self._img_h, self._img_w, 1])
+      goal_img[goal[0] - 6:goal[0] + 6, goal[1] - 6:goal[1] + 6, :] = 100
+      # goal_img = goal_img[np.newaxis, :, :, np.newaxis]
+      img = np.concatenate((imgs[i], goal_img), axis=-1)
+      mtrajs.append(MTraj(img, idx_traj))
+    return mtrajs
   
-  def dot_pos(self, pre_pos, pos):
-    origin = pre_pos + np.array([self._img_h/2, -self._img_w/2]) * 0.2
-    pos = (pos-origin)/0.2
-    pos = [-pos[0], pos[1]]
-    return np.array([int(round(pos[0])), int(round(pos[1]))])
 
-  def render_car(self, x, y, theta, l=24.0, w=12.0):
-    pass
-
-  def get_stack_traj(self, i):
-    traj = []
-    # img1, img2, img3 = self._imgs[i], self._imgs[i+1], self._imgs[i+2]
-    img1 = self._imgs[i]
-    for j in range(self._l_pos):
-      traj.append(self._poses[i+j])
-    disc_traj, goal = LinkAndDiscTraj(traj=traj, img_h=self._img_h, img_w=self._img_w,
-                                grid_h=self._grid_h, grid_w=self._grid_w, idx=i).discrete()
-    idx_traj = []
-    for disc_pos in disc_traj:
-      idx_traj.append(self._car.pos2idx(disc_pos))
-    
-    # Currently just use simple square as the goal. In fact, use car shape could be better.
-    goal_img = np.zeros([self._img_h, self._img_w, 1])
-    goal_img[goal[0]-6:goal[0]+6, goal[1]-6:goal[1]+6, :] = 100
-    # goal_img = goal_img[np.newaxis, :, :, np.newaxis]
-    img = np.concatenate((img1, goal_img), axis=-1)
-    return MTraj(i, img, idx_traj)
-
-  def test_stack_goal_img(self, i):
-    img = self._imgs[i]
-    traj = []
-    for j in range(self._l_pos):
-      traj.append(self._poses[i + j])
-    disc_traj, goal = LinkAndDiscTraj(traj=traj, img_h=self._img_h, img_w=self._img_w,
-                                grid_h=self._grid_h, grid_w=self._grid_w, idx=i).discrete()
-    print "goal: ", goal
-    idx_traj = []
-    for disc_pos in disc_traj:
-      idx_traj.append(self._car.pos2idx(disc_pos))
-
-    # Currently just use simple square as the goal. In fact, use car shape could be better.
-    # goal = self.dot_pos(traj[0], traj[-1])
-    # goal_img = np.zeros(img.shape)
-    # goal_img[goal[0] - 10:goal[0] + 10, goal[1] - 10:goal[1] + 10, :] = 255
-    # goal_img = goal_img[np.newaxis, :, :, np.newaxis]
-    img[max(goal[0]-10,0):goal[0]+10, max(goal[1]-10,0):goal[1]+10, -1] = 255
-    cv2.imwrite(self._exp_result_path+"/"+str(i)+".jpg", img)
-
-  def get_demo_trajs(self, ids):
+  def make_trajs_set(self, imgs_set, poses_set):
+    mtrajs = []
+    for imgs, poses in zip(imgs_set, poses_set):
+      mtrajs.extend(self.get_stack_trajs(imgs, poses))
+    return mtrajs
+  
+  def get_demo_trajs(self, imgs_set, poses_set):
+    mtrajs = self.make_trajs_set(imgs_set, poses_set)
     feat_maps = []
     trajs = []
-    for id in ids:
-      mtraj = self.get_stack_traj(id)
+    for mtraj in mtrajs:
       feat_maps.append(mtraj.img)
       trajs.append(mtraj.traj)
     return np.array(feat_maps), np.array(trajs)
-    
+  
+
+  # def get_traj(self, i):
+  #   traj = []
+  #   img = self._imgs[i]
+  #   for j in range(self._l_pos):
+  #     traj.append(self._poses[i+j])
+  #   disc_traj = LinkAndDiscTraj(traj=traj, img_h=self._img_h, img_w=self._img_w,
+  #                               grid_h=self._grid_h, grid_w=self._grid_w, idx=i).discrete()
+  #   idx_traj = []
+  #   for disc_pos in disc_traj:
+  #     idx_traj.append(self._car.pos2idx(disc_pos))
+  #   return MTraj(i, img, idx_traj)
+  
+  
+  # def dot_pos(self, pre_pos, pos):
+  #   origin = pre_pos + np.array([self._img_h/2, -self._img_w/2]) * 0.2
+  #   pos = (pos-origin)/0.2
+  #   pos = [-pos[0], pos[1]]
+  #   return np.array([int(round(pos[0])), int(round(pos[1]))])
+
+
+  # def get_stack_traj(self, i):
+  #   traj = []
+  #   # img1, img2, img3 = self._imgs[i], self._imgs[i+1], self._imgs[i+2]
+  #   img1 = self._imgs[i]
+  #   for j in range(self._l_pos):
+  #     traj.append(self._poses[i+j])
+  #   disc_traj, goal = LinkAndDiscTraj(traj=traj, img_h=self._img_h, img_w=self._img_w,
+  #                               grid_h=self._grid_h, grid_w=self._grid_w, idx=i).discrete()
+  #   idx_traj = []
+  #   for disc_pos in disc_traj:
+  #     idx_traj.append(self._car.pos2idx(disc_pos))
+  #
+  #   # Currently just use simple square as the goal. In fact, use car shape could be better.
+  #   goal_img = np.zeros([self._img_h, self._img_w, 1])
+  #   goal_img[goal[0]-6:goal[0]+6, goal[1]-6:goal[1]+6, :] = 100
+  #   # goal_img = goal_img[np.newaxis, :, :, np.newaxis]
+  #   img = np.concatenate((img1, goal_img), axis=-1)
+  #   return MTraj(i, img, idx_traj)
+
+  # def test_stack_goal_img(self, i):
+  #   img = self._imgs[i]
+  #   traj = []
+  #   for j in range(self._l_pos):
+  #     traj.append(self._poses[i + j])
+  #   disc_traj, goal = LinkAndDiscTraj(traj=traj, img_h=self._img_h, img_w=self._img_w,
+  #                               grid_h=self._grid_h, grid_w=self._grid_w, idx=i).discrete()
+  #   print "goal: ", goal
+  #   idx_traj = []
+  #   for disc_pos in disc_traj:
+  #     idx_traj.append(self._car.pos2idx(disc_pos))
+  #
+  #   # Currently just use simple square as the goal. In fact, use car shape could be better.
+  #   # goal = self.dot_pos(traj[0], traj[-1])
+  #   # goal_img = np.zeros(img.shape)
+  #   # goal_img[goal[0] - 10:goal[0] + 10, goal[1] - 10:goal[1] + 10, :] = 255
+  #   # goal_img = goal_img[np.newaxis, :, :, np.newaxis]
+  #   img[max(goal[0]-10,0):goal[0]+10, max(goal[1]-10,0):goal[1]+10, -1] = 255
+  #   cv2.imwrite(self._exp_result_path+"/"+str(i)+".jpg", img)
+  #
+  # def get_demo_trajs(self, ids):
+  #   feat_maps = []
+  #   trajs = []
+  #   for id in ids:
+  #     mtraj = self.get_stack_traj(id)
+  #     feat_maps.append(mtraj.img)
+  #     trajs.append(mtraj.traj)
+  #   return np.array(feat_maps), np.array(trajs)
+  #
     
   def save_plt(self, name, figsize, traj, rewards, values, policy):
     plt.figure(figsize=figsize)
@@ -266,10 +300,10 @@ class CarIRLExp(object):
     pos_traj = [self._car.idx2pos(idx) for idx in traj]
     return pos_traj
     
-  def train(self, ids=[]):
+  def train(self):
     print "getting demo trajs..."
     t = time.time()
-    inputs, demo_trajs = self.get_demo_trajs(ids)
+    inputs, demo_trajs = self.get_demo_trajs(self._imgs_set, self._poses_set)
     print "got demo trajs: {}s".format(time.time()-t)
     wraped_trajs = self.wrap_trajs(demo_trajs)
     print "Run fcn_maxent_irl..."
@@ -345,7 +379,8 @@ if __name__ == "__main__":
     print "we are training"
     # ids = np.random.randint(450, size=32)
     # ids = range(20)
-    car_irl_exp.train(range(400))
+    # car_irl_exp.train(range(400))
+    car_irl_exp.train()
     # car_irl_exp.simple_train()
   else:
     print "we are testing"

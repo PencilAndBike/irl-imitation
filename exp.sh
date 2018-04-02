@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 train=$1
 exp_id=$2
-exp_dir="/home/pirate03/Downloads/prediction_data/crop256/exp"
+ckpt_step=$3
+exp_dir="/home/pirate03/Downloads/carsim/exp"
 shopt -s nullglob
 numdirs=($exp_dir/*/)
 numdirs=${#numdirs[@]}
@@ -47,6 +48,16 @@ esac
 #    if [ -z $exp_id ]
 #    then
 #        exp_id=$numdirs
+#    fi
+#fi
+
+#if [ $train = "test" ]
+#then
+#    if [ -z $ckpt_step ]
+#    then
+#        echo $ckpt_step
+#    else
+#
 #    fi
 #fi
 
