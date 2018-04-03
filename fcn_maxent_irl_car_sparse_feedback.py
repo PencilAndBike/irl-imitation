@@ -25,11 +25,11 @@ PARSER.add_argument('-g', '--gamma', default=0.9, type=float, help='discount fac
 PARSER.add_argument('-nd', '--n_demos', default=16, type=int, help='number of expert trajectories')
 PARSER.add_argument('-lp', '--l_pos', default=7, type=int, help='length of concated positions')
 PARSER.add_argument('-lt', '--l_traj', default=10, type=int, help='length of discrete trajectory')
-PARSER.add_argument('-lr', '--learning_rate', default=0.02, type=float, help='learning rate')
-PARSER.add_argument('-ni', '--n_iters', default=100000, type=int, help='number of iterations')
+PARSER.add_argument('-lr', '--learning_rate', default=0.01, type=float, help='learning rate')
+PARSER.add_argument('-ni', '--n_iters', default=10000, type=int, help='number of iterations')
 PARSER.add_argument('-rd', '--record_dir', default="/home/pirate03/Downloads/carsim/simple_train", type=str, \
                     help='recording data dir')
-PARSER.add_argument('-ld', '--log_dir', default="/home/pirate03/Downloads/carsim/exp/0", type=str, \
+PARSER.add_argument('-ld', '--log_dir', default="/home/pirate03/Downloads/carsim/exp/10", type=str, \
                     help='training log dir')
 PARSER.add_argument('-name', '--exp_name', default="gw10_fcn_sparse_feed", type=str, help='experiment name')
 PARSER.add_argument('-n_exp', '--n_exp', default=20, type=int, help='repeat experiment n times')
@@ -96,8 +96,8 @@ class CarIRLExp(object):
     # n = len(filter(lambda x: '.' not in x, os.listdir(save_dir_exp)))
     self._log_dir = log_dir
     self._exp_result_path = log_dir+"/result"
-    # if not os.path.exists(self._exp_result_path):
-    #   os.makedirs(self._exp_result_path)
+    if not os.path.exists(self._exp_result_path):
+      os.makedirs(self._exp_result_path)
     self._ckpt_path = log_dir+"/ckpt"
     print "ckpt_path: ", self._ckpt_path
     self._max_vi = max_vi
@@ -147,7 +147,7 @@ class CarIRLExp(object):
       for disc_pos in disc_traj:
         idx_traj.append(self._car.pos2idx(disc_pos))
       goal_img = np.zeros([self._img_h, self._img_w, 1])
-      goal_img[goal[0] - 6:goal[0] + 6, goal[1] - 6:goal[1] + 6, :] = 100
+      goal_img[max(goal[0]-6, 0):goal[0]+6, max(goal[1]-6, 0):goal[1]+6, :] = 100
       # goal_img = goal_img[np.newaxis, :, :, np.newaxis]
       img = np.concatenate((imgs[i], goal_img), axis=-1)
       mtrajs.append(MTraj(img, idx_traj))
@@ -209,26 +209,13 @@ class CarIRLExp(object):
   #   img = np.concatenate((img1, goal_img), axis=-1)
   #   return MTraj(i, img, idx_traj)
 
-  # def test_stack_goal_img(self, i):
-  #   img = self._imgs[i]
-  #   traj = []
-  #   for j in range(self._l_pos):
-  #     traj.append(self._poses[i + j])
-  #   disc_traj, goal = LinkAndDiscTraj(traj=traj, img_h=self._img_h, img_w=self._img_w,
-  #                               grid_h=self._grid_h, grid_w=self._grid_w, idx=i).discrete()
-  #   print "goal: ", goal
-  #   idx_traj = []
-  #   for disc_pos in disc_traj:
-  #     idx_traj.append(self._car.pos2idx(disc_pos))
-  #
-  #   # Currently just use simple square as the goal. In fact, use car shape could be better.
-  #   # goal = self.dot_pos(traj[0], traj[-1])
-  #   # goal_img = np.zeros(img.shape)
-  #   # goal_img[goal[0] - 10:goal[0] + 10, goal[1] - 10:goal[1] + 10, :] = 255
-  #   # goal_img = goal_img[np.newaxis, :, :, np.newaxis]
-  #   img[max(goal[0]-10,0):goal[0]+10, max(goal[1]-10,0):goal[1]+10, -1] = 255
-  #   cv2.imwrite(self._exp_result_path+"/"+str(i)+".jpg", img)
-  #
+  def test_stack_goal_img(self, i):
+    imgs, poses = self._imgs_set[i], self._poses_set[i]
+    mtrajs = self.get_stack_trajs(imgs, poses)
+
+
+
+
   # def get_demo_trajs(self, ids):
   #   feat_maps = []
   #   trajs = []
@@ -245,7 +232,7 @@ class CarIRLExp(object):
     for idx in traj:
       x[self._car.idx2pos(idx)] = 1.0
     # print "traj:\n", traj
-    pos_traj = [self._car.idx2pos(idx) for idx in traj]
+    # pos_traj = [self._car.idx2pos(idx) for idx in traj]
     # print "pos traj:\n", pos_traj
     plt.subplot(1,4,1)
     img_utils.heatmap2d(x, 'Traj', block=False)
@@ -315,36 +302,20 @@ class CarIRLExp(object):
     print "fcn_maxent_irl is done"
 
 
-  def simple_train(self):
-    ids = np.random.randint(450, size=self._n_demos)
-    # ids = range(448, 455)
-    inputs, demo_trajs = self.get_demo_trajs(ids)
+  def test(self):
+    inputs, demo_trajs = self.get_demo_trajs(self._imgs_set, self._poses_set)
     wraped_trajs = self.wrap_trajs(demo_trajs)
-    nn_r = FCNIRL(inputs.shape[1:], np.array([self._h, self._w]), self._learning_rate, l2=self._l2,
-                  gpu_fraction=self._gpu_fraction)
-    simple_fcn_maxent_irl(inputs, nn_r, self._P_a, self._gamma, wraped_trajs,
-                   self._learning_rate, self._n_iters, self._gpu_fraction, self._ckpt_path, self._n_demos,
-                   max_itr=self._max_vi, ids=ids)
-    print "fcn_maxent_irl is done"
-
-
-  def test(self, ids):
-    names = os.listdir(self._log_dir)
-    n_results = len(filter(lambda x: 'result' in x, names))
-    self._exp_result_path = self._log_dir+"/result"+str(n_results)
-    if not os.path.exists(self._exp_result_path):
-      os.makedirs(self._exp_result_path)
-    inputs, demo_trajs = self.get_demo_trajs(ids)
-    trajs = self.wrap_trajs(demo_trajs)
+    print "Run fcn_maxent_irl..."
     nn_r = FCNIRL(inputs.shape[1:], np.array([self._h, self._w]), self._learning_rate, l2=self._l2,
                   gpu_fraction=self._gpu_fraction)
     saver = tf.train.Saver(tf.global_variables())
     saver.restore(nn_r.sess, self._ckpt_path+"/model_"+str(self._n_iters-1)+".ckpt")
     N_TRAJ = len(inputs)
     N_STATES, _, N_ACTIONS = np.shape(self._P_a)
+    
     for i in range(N_TRAJ):
-      print "run demo {}".format(ids[i])
-      feat_map, traj = inputs[i], trajs[i]
+      print "run demo {}".format(i)
+      feat_map, traj = inputs[i], wraped_trajs[i]
       feat_map = np.array([feat_map])
       # mu_D = demo_sparse_svf(traj, N_STATES)
       mu_D = demo_svf(traj, N_STATES)
@@ -358,9 +329,56 @@ class CarIRLExp(object):
       # print "mu_exp:\n", mu_exp
       grad_r = mu_D - mu_exp
       print "grad_r: \n", grad_r
-      cv2.imwrite(self._exp_result_path + '/' + str(i) + '_' + str(ids[i]) + ".png",
+      cv2.imwrite(self._exp_result_path + '/' + str(i) + "_car.png",
                   inputs[i][:, :, :3])
       self.save_plt(str(i), (4 * self._w, self._h), demo_trajs[i], reward, value, policy)
+
+      
+  def simple_train(self):
+    ids = np.random.randint(450, size=self._n_demos)
+    # ids = range(448, 455)
+    inputs, demo_trajs = self.get_demo_trajs(ids)
+    wraped_trajs = self.wrap_trajs(demo_trajs)
+    nn_r = FCNIRL(inputs.shape[1:], np.array([self._h, self._w]), self._learning_rate, l2=self._l2,
+                  gpu_fraction=self._gpu_fraction)
+    simple_fcn_maxent_irl(inputs, nn_r, self._P_a, self._gamma, wraped_trajs,
+                   self._learning_rate, self._n_iters, self._gpu_fraction, self._ckpt_path, self._n_demos,
+                   max_itr=self._max_vi, ids=ids)
+    print "fcn_maxent_irl is done"
+
+
+  # def test(self):
+  #   names = os.listdir(self._log_dir)
+  #   n_results = len(filter(lambda x: 'result' in x, names))
+  #   self._exp_result_path = self._log_dir+"/result"+str(n_results)
+  #   if not os.path.exists(self._exp_result_path):
+  #     os.makedirs(self._exp_result_path)
+  #   trajs = self.wrap_trajs(demo_trajs)
+  #   nn_r = FCNIRL(inputs.shape[1:], np.array([self._h, self._w]), self._learning_rate, l2=self._l2,
+  #                 gpu_fraction=self._gpu_fraction)
+  #   saver = tf.train.Saver(tf.global_variables())
+  #   saver.restore(nn_r.sess, self._ckpt_path+"/model_"+str(self._n_iters-1)+".ckpt")
+  #   N_TRAJ = len(inputs)
+  #   N_STATES, _, N_ACTIONS = np.shape(self._P_a)
+  #   for i in range(N_TRAJ):
+  #     print "run demo {}".format(ids[i])
+  #     feat_map, traj = inputs[i], trajs[i]
+  #     feat_map = np.array([feat_map])
+  #     # mu_D = demo_sparse_svf(traj, N_STATES)
+  #     mu_D = demo_svf(traj, N_STATES)
+  #     # print "mu_D:\n", mu_D
+  #     reward = nn_r.get_rewards(feat_map, is_train=True)
+  #     # print "rewards\n", rewards
+  #     reward = np.reshape(reward, N_STATES, order='F')
+  #     value, policy = value_iteration.value_iteration(self._P_a, reward, self._gamma, error=0.1, deterministic=True,
+  #                                                     max_itrs=self._max_vi)
+  #     mu_exp = compute_state_visition_freq(self._P_a, self._gamma, [traj], policy, deterministic=True)
+  #     # print "mu_exp:\n", mu_exp
+  #     grad_r = mu_D - mu_exp
+  #     print "grad_r: \n", grad_r
+  #     cv2.imwrite(self._exp_result_path + '/' + str(i) + '_' + str(ids[i]) + ".png",
+  #                 inputs[i][:, :, :3])
+  #     self.save_plt(str(i), (4 * self._w, self._h), demo_trajs[i], reward, value, policy)
 
 
 def test_heatmap():
@@ -384,7 +402,7 @@ if __name__ == "__main__":
     # car_irl_exp.simple_train()
   else:
     print "we are testing"
-    car_irl_exp.test(range(450))
+    car_irl_exp.test()
     # for i in range(30, 50):
     #   car_irl_exp.test_stack_goal_img(i)
   # car_irl_exp.test(range(68, 75)+range(116,126)+range(178,185)+range(450, 460)+range(499,502))
