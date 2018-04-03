@@ -24,10 +24,10 @@ PARSER.add_argument('-img_wid', '--img_width', default=256, type=int, help='widt
 PARSER.add_argument('-g', '--gamma', default=0.9, type=float, help='discount factor')
 PARSER.add_argument('-nd', '--n_demos', default=16, type=int, help='number of expert trajectories')
 PARSER.add_argument('-lp', '--l_pos', default=7, type=int, help='length of concated positions')
-PARSER.add_argument('-lt', '--l_traj', default=10, type=int, help='length of discrete trajectory')
+# PARSER.add_argument('-lt', '--l_traj', default=10, type=int, help='length of discrete trajectory')
 PARSER.add_argument('-lr', '--learning_rate', default=0.01, type=float, help='learning rate')
-PARSER.add_argument('-ni', '--n_iters', default=10000, type=int, help='number of iterations')
-PARSER.add_argument('-rd', '--record_dir', default="/home/pirate03/Downloads/carsim/simple_train", type=str, \
+PARSER.add_argument('-ni', '--n_iters', default=3000, type=int, help='number of iterations')
+PARSER.add_argument('-rd', '--record_dir', default="/home/pirate03/Downloads/carsim/test", type=str, \
                     help='recording data dir')
 PARSER.add_argument('-ld', '--log_dir', default="/home/pirate03/Downloads/carsim/exp/10", type=str, \
                     help='training log dir')
@@ -52,7 +52,7 @@ IH = ARGS.img_height
 IW = ARGS.img_width
 N_DEMOS = ARGS.n_demos
 L_POS = ARGS.l_pos
-L_TRAJ = ARGS.l_traj
+# L_TRAJ = ARGS.l_traj
 LEARNING_RATE = ARGS.learning_rate
 N_ITERS = ARGS.n_iters
 RECORD_DIR = ARGS.record_dir
@@ -66,7 +66,7 @@ IS_TRAIN = ARGS.is_train
 MAX_VI = ARGS.max_vi
 
 class CarIRLExp(object):
-  def __init__(self, l_pos, l_traj, n_demos, rec_dir, log_dir, gamma=0.9,
+  def __init__(self, l_pos, n_demos, rec_dir, log_dir, gamma=0.9,
                learning_rate=0.02, n_iters=20,
                gpu_fraction=0.2, l2=0.2, h=20, w=20, img_h=500, img_w=500, max_vi=10000):
     
@@ -389,7 +389,7 @@ def test_heatmap():
   plt.close()
     
 if __name__ == "__main__":
-  car_irl_exp = CarIRLExp(L_POS, L_TRAJ, N_DEMOS, RECORD_DIR, LOG_DIR, n_iters=N_ITERS, gpu_fraction=GPU_FRACTION,
+  car_irl_exp = CarIRLExp(L_POS, N_DEMOS, RECORD_DIR, LOG_DIR, n_iters=N_ITERS, gpu_fraction=GPU_FRACTION,
                           l2=L2, h=H, w=W, img_h=IH, img_w=IW, max_vi=MAX_VI)
   # car_irl_exp.test(range(450, 500))
   print "IS TRAIN OR NOT: ", IS_TRAIN
