@@ -25,9 +25,9 @@ PARSER.add_argument('-g', '--gamma', default=0.9, type=float, help='discount fac
 PARSER.add_argument('-nd', '--n_demos', default=16, type=int, help='number of expert trajectories')
 PARSER.add_argument('-lp', '--l_pos', default=7, type=int, help='length of concated positions')
 # PARSER.add_argument('-lt', '--l_traj', default=10, type=int, help='length of discrete trajectory')
-PARSER.add_argument('-lr', '--learning_rate', default=0.01, type=float, help='learning rate')
+PARSER.add_argument('-lr', '--learning_rate', default=0.003, type=float, help='learning rate')
 PARSER.add_argument('-ni', '--n_iters', default=3000, type=int, help='number of iterations')
-PARSER.add_argument('-rd', '--record_dir', default="/home/pirate03/Downloads/carsim/test", type=str, \
+PARSER.add_argument('-rd', '--record_dir', default="/home/pirate03/Downloads/carsim/simple_train", type=str, \
                     help='recording data dir')
 PARSER.add_argument('-ld', '--log_dir', default="/home/pirate03/Downloads/carsim/exp/10", type=str, \
                     help='training log dir')
@@ -76,7 +76,6 @@ class CarIRLExp(object):
     self._imgs_set, self._poses_set = self.get_imgs_and_poses_set(rec_dir)
     
     self._l_pos = l_pos
-    self._l_traj = l_traj
     self._n_demos = n_demos
     self._grid_h, self._grid_w = img_h/h, img_w/w
     self._car = Car(h, w)
@@ -147,7 +146,7 @@ class CarIRLExp(object):
       for disc_pos in disc_traj:
         idx_traj.append(self._car.pos2idx(disc_pos))
       goal_img = np.zeros([self._img_h, self._img_w, 1])
-      goal_img[max(goal[0]-6, 0):goal[0]+6, max(goal[1]-6, 0):goal[1]+6, :] = 100
+      goal_img[max(goal[0]-6, 0):goal[0]+6, max(goal[1]-6, 0):goal[1]+6, :] = 1.0
       # goal_img = goal_img[np.newaxis, :, :, np.newaxis]
       img = np.concatenate((imgs[i], goal_img), axis=-1)
       mtrajs.append(MTraj(img, idx_traj))
