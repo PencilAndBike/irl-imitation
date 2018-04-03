@@ -14,6 +14,7 @@ class FCNIRL:
     self.input_shape = input_shape
     self.out_shape = out_shape
     self.lr = lr
+    # self.lr = tf.placeholder(tf.float32, name="lr")
     self.name = name
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=gpu_fraction)
     self.is_train = tf.placeholder(tf.bool, name="is_train")
@@ -35,6 +36,8 @@ class FCNIRL:
     self.grad_norms = tf.global_norm(self.grad_theta)
     self.optimize = self.optimizer.apply_gradients(zip(self.grad_theta, self.theta))
     self.sess.run(tf.global_variables_initializer())
+  
+  # def get_lr(self, step, lr_decay=0.1, lr_decay_steps=2000):
   
   def _build_network(self, name):
     input_s = tf.placeholder(tf.float32, [None]+list(self.input_shape))
@@ -242,7 +245,7 @@ def fcn_maxent_irl(inputs, nn_r, P_a, gamma, t_trajs, lr, n_iters, gpu_fraction,
       print "grad_mean_8: ", np.mean(grad_rs, axis=0).reshape(np.dot(*out_shape))[::8]
       print "grad_var: ", np.var(grad_rs)
       print "grad_diff: ", np.mean(np.abs(grad_rs))
-    if itr==0 or (itr+1)%50==0 or (itr+1)==n_iters:
+    if itr==0 or (itr+1)%500==0 or (itr+1)==n_iters:
       saver.save(nn_r.sess, ckpt_path+"/model_{}.ckpt".format(itr))
     print "itr time: ", time.time() - t
     

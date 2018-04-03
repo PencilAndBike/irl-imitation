@@ -19,15 +19,14 @@ Step = namedtuple('Step','cur_state action next_state reward done')
 PARSER = argparse.ArgumentParser(description=None)
 PARSER.add_argument('-hei', '--height', default=16, type=int, help='height of the grid map')
 PARSER.add_argument('-wid', '--width', default=16, type=int, help='width of the grid map')
-PARSER.add_argument('-img_hei', '--img_height', default=256, type=int, help='height of the img')
-PARSER.add_argument('-img_wid', '--img_width', default=256, type=int, help='width of the img')
+PARSER.add_argument('-img_hei', '--img_height', default=128, type=int, help='height of the img')
+PARSER.add_argument('-img_wid', '--img_width', default=128, type=int, help='width of the img')
 PARSER.add_argument('-g', '--gamma', default=0.9, type=float, help='discount factor')
 PARSER.add_argument('-nd', '--n_demos', default=16, type=int, help='number of expert trajectories')
 PARSER.add_argument('-lp', '--l_pos', default=7, type=int, help='length of concated positions')
-# PARSER.add_argument('-lt', '--l_traj', default=10, type=int, help='length of discrete trajectory')
-PARSER.add_argument('-lr', '--learning_rate', default=0.003, type=float, help='learning rate')
-PARSER.add_argument('-ni', '--n_iters', default=3000, type=int, help='number of iterations')
-PARSER.add_argument('-rd', '--record_dir', default="/home/pirate03/Downloads/carsim/simple_train", type=str, \
+PARSER.add_argument('-lr', '--learning_rate', default=0.001, type=float, help='learning rate')
+PARSER.add_argument('-ni', '--n_iters', default=10000, type=int, help='number of iterations')
+PARSER.add_argument('-rd', '--record_dir', default="/home/pirate03/Downloads/carsim/resized_train", type=str, \
                     help='recording data dir')
 PARSER.add_argument('-ld', '--log_dir', default="/home/pirate03/Downloads/carsim/exp/10", type=str, \
                     help='training log dir')
@@ -36,10 +35,9 @@ PARSER.add_argument('-n_exp', '--n_exp', default=20, type=int, help='repeat expe
 PARSER.add_argument('-gpu_frac', '--gpu_fraction', default=0.2, type=float, help='gpu fraction')
 PARSER.add_argument('-l2', '--l2', default=0., type=float, help='l2 norm')
 PARSER.add_argument('-term', '--terminal', default=True, type=bool, help='terminal or not when agent reach the goal')
-# PARSER.add_argument('-is_train', '--is_train', default=True, type=bool, help='train or test')
 PARSER.add_argument('--train', dest='is_train', action='store_true', help='train or test')
 PARSER.add_argument('--test', dest='is_train',action='store_false', help='train or test')
-PARSER.add_argument('-max_vi', '--max_vi', default=10000, type=int, help='value iteration max num')
+PARSER.add_argument('-max_vi', '--max_vi', default=100, type=int, help='value iteration max num')
 PARSER.set_defaults(is_train=True)
 ARGS = PARSER.parse_args()
 print ARGS
@@ -52,7 +50,6 @@ IH = ARGS.img_height
 IW = ARGS.img_width
 N_DEMOS = ARGS.n_demos
 L_POS = ARGS.l_pos
-# L_TRAJ = ARGS.l_traj
 LEARNING_RATE = ARGS.learning_rate
 N_ITERS = ARGS.n_iters
 RECORD_DIR = ARGS.record_dir
@@ -68,13 +65,12 @@ MAX_VI = ARGS.max_vi
 class CarIRLExp(object):
   def __init__(self, l_pos, n_demos, rec_dir, log_dir, gamma=0.9,
                learning_rate=0.02, n_iters=20,
-               gpu_fraction=0.2, l2=0.2, h=20, w=20, img_h=500, img_w=500, max_vi=10000):
+               gpu_fraction=0.2, l2=0.2, h=20, w=20, img_h=500, img_w=500, max_vi=100):
     
     self._rec_dir = rec_dir
     # self._rec_train_dir = rec_dir + '/train'
     # self._rec_test_dir = rec_dir + '/test'
     self._imgs_set, self._poses_set = self.get_imgs_and_poses_set(rec_dir)
-    
     self._l_pos = l_pos
     self._n_demos = n_demos
     self._grid_h, self._grid_w = img_h/h, img_w/w
@@ -114,13 +110,18 @@ class CarIRLExp(object):
         poses_set.append(self.get_poses(rec_dir+'/'+eps_name)[:-5])
       except Exception as e:
         print eps_name, ": ", e
-      
     return imgs_set, poses_set
     
     
-  def get_imgs(self, rec_dir):
+  def get_imgs(self, fdir):
     # print rec_dir
-    return ProcessCarImg(rec_dir).concat()
+    pci = ProcessCarImg(fdir)
+    lin_imgs = pci.read_imgs(pci._lin_dir)[:,:,:,np.newaxis]/100.0
+    obs_imgs = pci.read_imgs(pci._obs_dir)[:,:,:,np.newaxis]/100.0
+    ret_imgs = np.concatenate((lin_imgs, obs_imgs), axis=-1)
+    del lin_imgs
+    del obs_imgs
+    return ret_imgs
     
     
   def get_poses(self, rec_dir):
@@ -135,13 +136,14 @@ class CarIRLExp(object):
     return np.array(poses)
 
   
-  def get_stack_trajs(self, imgs, poses):
+  def make_mtrajs(self, imgs, poses):
     assert len(imgs) == len(poses)
     mtrajs = []
     for i in range(len(imgs)-self._l_pos):
       traj = poses[i:i+self._l_pos]
       disc_traj, goal = LinkAndDiscTraj(traj=traj, img_h=self._img_h, img_w=self._img_w,
-                                  grid_h=self._grid_h, grid_w=self._grid_w, idx=i).discrete()
+                                        grid_h=self._grid_h, grid_w=self._grid_w,
+                                        particle=0.2*500.0/self._img_h, idx=i).discrete()
       idx_traj = []
       for disc_pos in disc_traj:
         idx_traj.append(self._car.pos2idx(disc_pos))
@@ -153,14 +155,14 @@ class CarIRLExp(object):
     return mtrajs
   
 
-  def make_trajs_set(self, imgs_set, poses_set):
+  def make_mtrajs_set(self, imgs_set, poses_set):
     mtrajs = []
     for imgs, poses in zip(imgs_set, poses_set):
       mtrajs.extend(self.get_stack_trajs(imgs, poses))
     return mtrajs
   
   def get_demo_trajs(self, imgs_set, poses_set):
-    mtrajs = self.make_trajs_set(imgs_set, poses_set)
+    mtrajs = self.make_mtrajs_set(imgs_set, poses_set)
     feat_maps = []
     trajs = []
     for mtraj in mtrajs:
@@ -168,62 +170,6 @@ class CarIRLExp(object):
       trajs.append(mtraj.traj)
     return np.array(feat_maps), np.array(trajs)
   
-
-  # def get_traj(self, i):
-  #   traj = []
-  #   img = self._imgs[i]
-  #   for j in range(self._l_pos):
-  #     traj.append(self._poses[i+j])
-  #   disc_traj = LinkAndDiscTraj(traj=traj, img_h=self._img_h, img_w=self._img_w,
-  #                               grid_h=self._grid_h, grid_w=self._grid_w, idx=i).discrete()
-  #   idx_traj = []
-  #   for disc_pos in disc_traj:
-  #     idx_traj.append(self._car.pos2idx(disc_pos))
-  #   return MTraj(i, img, idx_traj)
-  
-  
-  # def dot_pos(self, pre_pos, pos):
-  #   origin = pre_pos + np.array([self._img_h/2, -self._img_w/2]) * 0.2
-  #   pos = (pos-origin)/0.2
-  #   pos = [-pos[0], pos[1]]
-  #   return np.array([int(round(pos[0])), int(round(pos[1]))])
-
-
-  # def get_stack_traj(self, i):
-  #   traj = []
-  #   # img1, img2, img3 = self._imgs[i], self._imgs[i+1], self._imgs[i+2]
-  #   img1 = self._imgs[i]
-  #   for j in range(self._l_pos):
-  #     traj.append(self._poses[i+j])
-  #   disc_traj, goal = LinkAndDiscTraj(traj=traj, img_h=self._img_h, img_w=self._img_w,
-  #                               grid_h=self._grid_h, grid_w=self._grid_w, idx=i).discrete()
-  #   idx_traj = []
-  #   for disc_pos in disc_traj:
-  #     idx_traj.append(self._car.pos2idx(disc_pos))
-  #
-  #   # Currently just use simple square as the goal. In fact, use car shape could be better.
-  #   goal_img = np.zeros([self._img_h, self._img_w, 1])
-  #   goal_img[goal[0]-6:goal[0]+6, goal[1]-6:goal[1]+6, :] = 100
-  #   # goal_img = goal_img[np.newaxis, :, :, np.newaxis]
-  #   img = np.concatenate((img1, goal_img), axis=-1)
-  #   return MTraj(i, img, idx_traj)
-
-  def test_stack_goal_img(self, i):
-    imgs, poses = self._imgs_set[i], self._poses_set[i]
-    mtrajs = self.get_stack_trajs(imgs, poses)
-
-
-
-
-  # def get_demo_trajs(self, ids):
-  #   feat_maps = []
-  #   trajs = []
-  #   for id in ids:
-  #     mtraj = self.get_stack_traj(id)
-  #     feat_maps.append(mtraj.img)
-  #     trajs.append(mtraj.traj)
-  #   return np.array(feat_maps), np.array(trajs)
-  #
     
   def save_plt(self, name, figsize, traj, rewards, values, policy):
     plt.figure(figsize=figsize)
@@ -247,17 +193,6 @@ class CarIRLExp(object):
     plt.savefig(self._exp_result_path+"/"+name+".png")
     plt.close()
     
-  def shorten_trajs(self, trajs):
-    l = min(map(len, trajs))
-    shortened_trajs = []
-    for traj in trajs:
-      shortened_trajs.append(traj[:l])
-    # for traj in trajs:
-    #   shortened_traj = self.shorten(traj)
-    #   if len(shortened_traj) == self._l_traj:
-    #     shortened_trajs.append(shortened_traj)
-    return shortened_trajs
-    
   
   def wrap(self, traj):
     step_wraped_traj = []
@@ -273,18 +208,6 @@ class CarIRLExp(object):
       step_wraped_trajs.append(self.wrap(traj))
     return step_wraped_trajs
     
-    
-  def run(self, P_a, start_idx, policy, l):
-    traj = []
-    idx = start_idx
-    traj.append(idx)
-    for i in range(l):
-      act = int(policy[idx])
-      next_idx = np.argmax(P_a[idx, :, act])
-      traj.append(next_idx)
-      idx = next_idx
-    pos_traj = [self._car.idx2pos(idx) for idx in traj]
-    return pos_traj
     
   def train(self):
     print "getting demo trajs..."
@@ -345,47 +268,6 @@ class CarIRLExp(object):
                    max_itr=self._max_vi, ids=ids)
     print "fcn_maxent_irl is done"
 
-
-  # def test(self):
-  #   names = os.listdir(self._log_dir)
-  #   n_results = len(filter(lambda x: 'result' in x, names))
-  #   self._exp_result_path = self._log_dir+"/result"+str(n_results)
-  #   if not os.path.exists(self._exp_result_path):
-  #     os.makedirs(self._exp_result_path)
-  #   trajs = self.wrap_trajs(demo_trajs)
-  #   nn_r = FCNIRL(inputs.shape[1:], np.array([self._h, self._w]), self._learning_rate, l2=self._l2,
-  #                 gpu_fraction=self._gpu_fraction)
-  #   saver = tf.train.Saver(tf.global_variables())
-  #   saver.restore(nn_r.sess, self._ckpt_path+"/model_"+str(self._n_iters-1)+".ckpt")
-  #   N_TRAJ = len(inputs)
-  #   N_STATES, _, N_ACTIONS = np.shape(self._P_a)
-  #   for i in range(N_TRAJ):
-  #     print "run demo {}".format(ids[i])
-  #     feat_map, traj = inputs[i], trajs[i]
-  #     feat_map = np.array([feat_map])
-  #     # mu_D = demo_sparse_svf(traj, N_STATES)
-  #     mu_D = demo_svf(traj, N_STATES)
-  #     # print "mu_D:\n", mu_D
-  #     reward = nn_r.get_rewards(feat_map, is_train=True)
-  #     # print "rewards\n", rewards
-  #     reward = np.reshape(reward, N_STATES, order='F')
-  #     value, policy = value_iteration.value_iteration(self._P_a, reward, self._gamma, error=0.1, deterministic=True,
-  #                                                     max_itrs=self._max_vi)
-  #     mu_exp = compute_state_visition_freq(self._P_a, self._gamma, [traj], policy, deterministic=True)
-  #     # print "mu_exp:\n", mu_exp
-  #     grad_r = mu_D - mu_exp
-  #     print "grad_r: \n", grad_r
-  #     cv2.imwrite(self._exp_result_path + '/' + str(i) + '_' + str(ids[i]) + ".png",
-  #                 inputs[i][:, :, :3])
-  #     self.save_plt(str(i), (4 * self._w, self._h), demo_trajs[i], reward, value, policy)
-
-
-def test_heatmap():
-  x = np.arange(9).reshape((3,3))
-  plt.subplot(1,1,1)
-  img_utils.heatmap2d(x, 'x', block=False)
-  plt.savefig('test.png')
-  plt.close()
     
 if __name__ == "__main__":
   car_irl_exp = CarIRLExp(L_POS, N_DEMOS, RECORD_DIR, LOG_DIR, n_iters=N_ITERS, gpu_fraction=GPU_FRACTION,
