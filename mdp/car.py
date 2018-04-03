@@ -28,7 +28,7 @@ class LinkAndDiscTraj(object):
     self._grid_h = grid_h
     self._grid_w = grid_w
     self._particle = particle
-    self._origin = self._start_pos + np.array([img_h/2, -img_w/2]) * 0.2
+    self._origin = self._start_pos + np.array([-img_h/2, -img_w/2]) * 0.2
     self._idx = idx
 
     
@@ -54,7 +54,7 @@ class LinkAndDiscTraj(object):
   def dot_pos(self, pos):
     
     pos = (pos-self._origin)/0.2
-    pos = [-pos[0], pos[1]]
+    pos = [pos[0], pos[1]]
     return np.array([int(round(pos[0])), int(round(pos[1]))])
     # return disc_pos / np.array([self._h, self._w])
   
