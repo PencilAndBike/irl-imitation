@@ -52,7 +52,7 @@ class FCNIRL:
       print "input_s shape: ", input_s.shape
       # reward = tf_utils.conv2d(input_s, 1, [1,1])
       # reward = tf_utils.conv2d(conv1, 1, [1,1])
-      conv1 = tf_utils.conv2d(input_s, 32, [8,8], stride=4, name='conv1')
+      conv1 = tf_utils.conv2d(input_s, 32, [4,4], stride=2, name='conv1')
       # conv1 = tf_utils.max_pool(conv1)
       conv1 = tf_utils.bn(conv1, is_train=self.is_train, name='bn1')
       conv2 = tf_utils.conv2d(conv1, 32, [4,4], stride=2, name='conv2')
@@ -192,7 +192,7 @@ def demo_sparse_svf(traj, n_states):
 
   
 def fcn_maxent_irl(inputs, nn_r, P_a, gamma, t_trajs, lr, n_iters, gpu_fraction, ckpt_path, batch_size=16,
-                   max_itr=np.inf):
+                   max_itr=100):
   """
   Maximum Entropy Inverse Reinforcement Learning (Maxent IRL)
 
@@ -232,6 +232,7 @@ def fcn_maxent_irl(inputs, nn_r, P_a, gamma, t_trajs, lr, n_iters, gpu_fraction,
       reward = nn_r.get_rewards(feat_map, is_train=True)
       # print "rewards\n", rewards
       reward = np.reshape(reward, N_STATES, order='F')
+      reward = normalize(reward)
       # rewards = np.reshape(rewards, feat_map.shape[1]*feat_map.shape[2], order='F')
       _, policy = value_iteration.value_iteration(P_a, reward, gamma, error=0.1, deterministic=True, max_itrs=max_itr)
       mu_exp = compute_state_visition_freq(P_a, gamma, [traj], policy, deterministic=True)
@@ -245,7 +246,7 @@ def fcn_maxent_irl(inputs, nn_r, P_a, gamma, t_trajs, lr, n_iters, gpu_fraction,
       print "grad_mean_8: ", np.mean(grad_rs, axis=0).reshape(np.dot(*out_shape))[::8]
       print "grad_var: ", np.var(grad_rs)
       print "grad_diff: ", np.mean(np.abs(grad_rs))
-    if itr==0 or (itr+1)%500==0 or (itr+1)==n_iters:
+    if itr==0 or (itr+1)%200==0 or (itr+1)==n_iters:
       saver.save(nn_r.sess, ckpt_path+"/model_{}.ckpt".format(itr))
     print "itr time: ", time.time() - t
     

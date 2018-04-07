@@ -23,12 +23,12 @@ PARSER.add_argument('-img_hei', '--img_height', default=128, type=int, help='hei
 PARSER.add_argument('-img_wid', '--img_width', default=128, type=int, help='width of the img')
 PARSER.add_argument('-g', '--gamma', default=0.9, type=float, help='discount factor')
 PARSER.add_argument('-nd', '--n_demos', default=16, type=int, help='number of expert trajectories')
-PARSER.add_argument('-lp', '--l_pos', default=7, type=int, help='length of concated positions')
-PARSER.add_argument('-lr', '--learning_rate', default=0.001, type=float, help='learning rate')
-PARSER.add_argument('-ni', '--n_iters', default=10000, type=int, help='number of iterations')
+PARSER.add_argument('-lp', '--l_pos', default=4, type=int, help='length of concated positions')
+PARSER.add_argument('-lr', '--learning_rate', default=0.0001, type=float, help='learning rate')
+PARSER.add_argument('-ni', '--n_iters', default=20000, type=int, help='number of iterations')
 PARSER.add_argument('-rd', '--record_dir', default="/home/pirate03/Downloads/carsim/resized_train", type=str, \
                     help='recording data dir')
-PARSER.add_argument('-ld', '--log_dir', default="/home/pirate03/Downloads/carsim/exp/10", type=str, \
+PARSER.add_argument('-ld', '--log_dir', default="/home/pirate03/Downloads/carsim/exp/22", type=str, \
                     help='training log dir')
 PARSER.add_argument('-name', '--exp_name', default="gw10_fcn_sparse_feed", type=str, help='experiment name')
 PARSER.add_argument('-n_exp', '--n_exp', default=20, type=int, help='repeat experiment n times')
@@ -90,7 +90,8 @@ class CarIRLExp(object):
     # save_dir_exp = self._rec_dir+"/exp"
     # n = len(filter(lambda x: '.' not in x, os.listdir(save_dir_exp)))
     self._log_dir = log_dir
-    self._exp_result_path = log_dir+"/result"
+    result_n = len(filter(lambda x: 'result' in x, os.listdir(log_dir)))
+    self._exp_result_path = log_dir+'/result'+str(result_n)
     if not os.path.exists(self._exp_result_path):
       os.makedirs(self._exp_result_path)
     self._ckpt_path = log_dir+"/ckpt"
@@ -100,24 +101,26 @@ class CarIRLExp(object):
     #   os.makedirs(self._ckpt_path)
     
     
-  def get_imgs_and_poses_set(self, rec_dir):
+  def get_imgs_and_poses_set(self, rec_dir, max_num=250):
     eps_names = sorted(os.listdir(rec_dir))
     imgs_set = []
     poses_set = []
-    for eps_name in eps_names:
+    for i, eps_name in enumerate(eps_names):
       try:
         imgs_set.append(self.get_imgs(rec_dir+'/'+eps_name)[:-5])
         poses_set.append(self.get_poses(rec_dir+'/'+eps_name)[:-5])
       except Exception as e:
         print eps_name, ": ", e
+      if i > max_num:
+        break
     return imgs_set, poses_set
     
     
   def get_imgs(self, fdir):
     # print rec_dir
     pci = ProcessCarImg(fdir)
-    lin_imgs = pci.read_imgs(pci._lin_dir)[:,:,:,np.newaxis]/100.0
-    obs_imgs = pci.read_imgs(pci._obs_dir)[:,:,:,np.newaxis]/100.0
+    lin_imgs = pci.read_imgs(pci._lin_dir)[:,:,:,np.newaxis]/255.0
+    obs_imgs = pci.read_imgs(pci._obs_dir)[:,:,:,np.newaxis]/255.0
     ret_imgs = np.concatenate((lin_imgs, obs_imgs), axis=-1)
     del lin_imgs
     del obs_imgs
@@ -144,11 +147,12 @@ class CarIRLExp(object):
       disc_traj, goal = LinkAndDiscTraj(traj=traj, img_h=self._img_h, img_w=self._img_w,
                                         grid_h=self._grid_h, grid_w=self._grid_w,
                                         particle=0.2*500.0/self._img_h, idx=i).discrete()
+      print 'goal: ', goal
       idx_traj = []
       for disc_pos in disc_traj:
         idx_traj.append(self._car.pos2idx(disc_pos))
       goal_img = np.zeros([self._img_h, self._img_w, 1])
-      goal_img[max(goal[0]-6, 0):goal[0]+6, max(goal[1]-6, 0):goal[1]+6, :] = 1.0
+      goal_img[max(goal[0]-2, 0):goal[0]+2, max(goal[1]-2, 0):goal[1]+2, :] = 1.0
       # goal_img = goal_img[np.newaxis, :, :, np.newaxis]
       img = np.concatenate((imgs[i], goal_img), axis=-1)
       mtrajs.append(MTraj(img, idx_traj))
@@ -158,16 +162,19 @@ class CarIRLExp(object):
   def make_mtrajs_set(self, imgs_set, poses_set):
     mtrajs = []
     for imgs, poses in zip(imgs_set, poses_set):
-      mtrajs.extend(self.get_stack_trajs(imgs, poses))
+      mtrajs.extend(self.make_mtrajs(imgs, poses))
     return mtrajs
   
   def get_demo_trajs(self, imgs_set, poses_set):
     mtrajs = self.make_mtrajs_set(imgs_set, poses_set)
+    del imgs_set
     feat_maps = []
     trajs = []
     for mtraj in mtrajs:
-      feat_maps.append(mtraj.img)
-      trajs.append(mtraj.traj)
+      # Prevent to small bug
+      if len(mtraj.traj) >= 2:
+        feat_maps.append(mtraj.img)
+        trajs.append(mtraj.traj)
     return np.array(feat_maps), np.array(trajs)
   
     
@@ -245,14 +252,15 @@ class CarIRLExp(object):
       reward = nn_r.get_rewards(feat_map, is_train=True)
       # print "rewards\n", rewards
       reward = np.reshape(reward, N_STATES, order='F')
+      reward = normalize(reward)
       value, policy = value_iteration.value_iteration(self._P_a, reward, self._gamma, error=0.1, deterministic=True,
                                                       max_itrs=self._max_vi)
       mu_exp = compute_state_visition_freq(self._P_a, self._gamma, [traj], policy, deterministic=True)
-      # print "mu_exp:\n", mu_exp
+      print "mu_exp:\n", mu_exp
       grad_r = mu_D - mu_exp
       print "grad_r: \n", grad_r
       cv2.imwrite(self._exp_result_path + '/' + str(i) + "_car.png",
-                  inputs[i][:, :, :3])
+                  inputs[i][:, :, :3]*255.0)
       self.save_plt(str(i), (4 * self._w, self._h), demo_trajs[i], reward, value, policy)
 
       
@@ -286,6 +294,7 @@ if __name__ == "__main__":
     car_irl_exp.test()
     # for i in range(30, 50):
     #   car_irl_exp.test_stack_goal_img(i)
+  exit()
   # car_irl_exp.test(range(68, 75)+range(116,126)+range(178,185)+range(450, 460)+range(499,502))
   # ckpt_path = "/home/pirate03/PycharmProjects/irl-imitation/ckpt4/model_1499.ckpt"
   # car_irl_exp.test('test', ckpt_path, ids=[3, 4, 5, 6])
