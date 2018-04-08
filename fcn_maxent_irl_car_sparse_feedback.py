@@ -28,7 +28,7 @@ PARSER.add_argument('-lr', '--learning_rate', default=0.0001, type=float, help='
 PARSER.add_argument('-ni', '--n_iters', default=20000, type=int, help='number of iterations')
 PARSER.add_argument('-rd', '--record_dir', default="/home/pirate03/Downloads/carsim/resized_train", type=str, \
                     help='recording data dir')
-PARSER.add_argument('-ld', '--log_dir', default="/home/pirate03/Downloads/carsim/exp/22", type=str, \
+PARSER.add_argument('-ld', '--log_dir', default="/home/pirate03/Downloads/carsim/exp/26", type=str, \
                     help='training log dir')
 PARSER.add_argument('-name', '--exp_name', default="gw10_fcn_sparse_feed", type=str, help='experiment name')
 PARSER.add_argument('-n_exp', '--n_exp', default=20, type=int, help='repeat experiment n times')

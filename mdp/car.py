@@ -102,13 +102,18 @@ class LinkAndDiscTraj(object):
   
   def tile_traj(self, traj):
     tiled_traj = [tuple(traj[0])]
-    for i in range(len(traj)-2):
-      # If next pos is in tiled_traj, then the pos thould be passed
-      if tuple(traj[i+1]) in tiled_traj:
-        pass
-      if self.is_tile(tuple(traj[i]), tuple(traj[i+2])):
-        tiled_traj.append(tuple(traj[i+2]))
+    i = 0
+    while i < len(traj)-2:
+      if self.is_tile(traj[i], traj[i+2]):
+        tiled_traj.append(traj[i+2])
+        i += 2
+      else:
+        tiled_traj.append(traj[i+1])
+        i += 1
+    if i == len(traj)-2:
+      tiled_traj.append(traj[-1])
     return tiled_traj
+    
     
   def distile_traj(self, traj):
     distiled_traj = [tuple(traj[0])]
@@ -139,6 +144,7 @@ class LinkAndDiscTraj(object):
       if discreted_pos not in discreted_traj:
         discreted_traj.append(discreted_pos)
     # discreted_traj = self.distile_traj(discreted_traj)
+    discreted_traj = self.tile_traj(discreted_traj)
     return discreted_traj, goal
   
 
@@ -147,17 +153,17 @@ class Car(object):
   def __init__(self, height=20, width=20, terminals={}):
     self.height = height
     self.width = width
-    # self.neighbors = [(-1, -1), (-1, 0), (-1, 1),
-    #                   (0, -1), (0, 0), (0, 1),
-    #                   (1, -1), (1, 0), (1, 1)]
-    # self.actions = [0, 1, 2,
-    #                 3, 4, 5,
-    #                 6, 7, 8]
-    self.neighbors = [(-1, 0),
+    self.neighbors = [(-1, -1), (-1, 0), (-1, 1),
                       (0, -1), (0, 0), (0, 1),
-                      (1, 0)]
+                      (1, -1), (1, 0), (1, 1)]
     self.actions = [0, 1, 2,
-                    3, 4]
+                    3, 4, 5,
+                    6, 7, 8]
+    # self.neighbors = [(-1, 0),
+    #                   (0, -1), (0, 0), (0, 1),
+    #                   (1, 0)]
+    # self.actions = [0, 1, 2,
+    #                 3, 4]
     self.n_actions = len(self.actions)
     self.terminals = terminals
 
