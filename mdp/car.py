@@ -144,7 +144,7 @@ class LinkAndDiscTraj(object):
       if discreted_pos not in discreted_traj:
         discreted_traj.append(discreted_pos)
     # discreted_traj = self.distile_traj(discreted_traj)
-    discreted_traj = self.tile_traj(discreted_traj)
+    # discreted_traj = self.tile_traj(discreted_traj)
     return discreted_traj, goal
   
 
@@ -153,17 +153,17 @@ class Car(object):
   def __init__(self, height=20, width=20, terminals={}):
     self.height = height
     self.width = width
-    self.neighbors = [(-1, -1), (-1, 0), (-1, 1),
-                      (0, -1), (0, 0), (0, 1),
-                      (1, -1), (1, 0), (1, 1)]
-    self.actions = [0, 1, 2,
-                    3, 4, 5,
-                    6, 7, 8]
-    # self.neighbors = [(-1, 0),
+    # self.neighbors = [(-1, -1), (-1, 0), (-1, 1),
     #                   (0, -1), (0, 0), (0, 1),
-    #                   (1, 0)]
+    #                   (1, -1), (1, 0), (1, 1)]
     # self.actions = [0, 1, 2,
-    #                 3, 4]
+    #                 3, 4, 5,
+    #                 6, 7, 8]
+    self.neighbors = [(-1, 0),
+                      (0, -1), (0, 0), (0, 1),
+                      (1, 0)]
+    self.actions = [0, 1, 2,
+                    3, 4]
     self.n_actions = len(self.actions)
     self.terminals = terminals
 

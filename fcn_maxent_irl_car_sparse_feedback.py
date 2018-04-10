@@ -17,15 +17,15 @@ import cv2
 Step = namedtuple('Step','cur_state action next_state reward done')
 
 PARSER = argparse.ArgumentParser(description=None)
-PARSER.add_argument('-hei', '--height', default=16, type=int, help='height of the grid map')
-PARSER.add_argument('-wid', '--width', default=16, type=int, help='width of the grid map')
+PARSER.add_argument('-hei', '--height', default=64, type=int, help='height of the grid map')
+PARSER.add_argument('-wid', '--width', default=64, type=int, help='width of the grid map')
 PARSER.add_argument('-img_hei', '--img_height', default=128, type=int, help='height of the img')
 PARSER.add_argument('-img_wid', '--img_width', default=128, type=int, help='width of the img')
 PARSER.add_argument('-g', '--gamma', default=0.9, type=float, help='discount factor')
 PARSER.add_argument('-nd', '--n_demos', default=16, type=int, help='number of expert trajectories')
 PARSER.add_argument('-lp', '--l_pos', default=4, type=int, help='length of concated positions')
 PARSER.add_argument('-lr', '--learning_rate', default=0.0001, type=float, help='learning rate')
-PARSER.add_argument('-ni', '--n_iters', default=20000, type=int, help='number of iterations')
+PARSER.add_argument('-ni', '--n_iters', default=5000, type=int, help='number of iterations')
 PARSER.add_argument('-rd', '--record_dir', default="/home/pirate03/Downloads/carsim/resized_train", type=str, \
                     help='recording data dir')
 PARSER.add_argument('-ld', '--log_dir', default="/home/pirate03/Downloads/carsim/exp/26", type=str, \
@@ -299,3 +299,4 @@ if __name__ == "__main__":
   # ckpt_path = "/home/pirate03/PycharmProjects/irl-imitation/ckpt4/model_1499.ckpt"
   # car_irl_exp.test('test', ckpt_path, ids=[3, 4, 5, 6])
   # test_heatmap()
+ 
