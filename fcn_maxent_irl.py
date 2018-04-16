@@ -6,7 +6,7 @@ import img_utils
 import tf_utils
 from utils import *
 import time
-from multiprocessing import Pool
+from multiprocessing import Pool, Manager
 
 class FCNIRL:
   def __init__(self, input_shape, out_shape, lr, l2=10, name='deep_irl_fc', gpu_fraction=0.2,
@@ -56,7 +56,7 @@ class FCNIRL:
       conv1 = tf_utils.conv2d(input_s, 32, [4,4], stride=2, name='conv1')
       # conv1 = tf_utils.max_pool(conv1)
       conv1 = tf_utils.bn(conv1, is_train=self.is_train, name='bn1')
-      conv2 = tf_utils.conv2d(conv1, 32, [4,4], stride=1, name='conv2')
+      conv2 = tf_utils.conv2d(conv1, 32, [4,4], stride=2, name='conv2')
       # conv2 = tf_utils.max_pool(conv2)
       conv2 = tf_utils.bn(conv2, is_train=self.is_train, name='bn2')
       conv3 = tf_utils.conv2d(conv2, 32, [2,2], stride=1, name='conv3')
@@ -192,8 +192,6 @@ def demo_sparse_svf(traj, n_states):
   return p
 
 
-
-
 def fcn_maxent_irl(inputs, nn_r, P_a, gamma, t_trajs, lr, n_iters, gpu_fraction, ckpt_path, batch_size=16,
                    max_itr=100):
   """
@@ -231,27 +229,31 @@ def fcn_maxent_irl(inputs, nn_r, P_a, gamma, t_trajs, lr, n_iters, gpu_fraction,
     # print "mu_exp:\n", mu_exp
     grad_r = mu_D - mu_exp
     grad_r = np.reshape(grad_r, (out_shape[0], out_shape[1], 1), order='F')
+    # print 'grad_r {}: \n {}'.format(i, grad_r)
     return grad_r
+    # grad_rs[i] = grad_r
 
   # init nn model
   saver = tf.train.Saver(tf.global_variables())
   for itr in range(n_iters):
     t = time.time()
     print "--------itr {}--------".format(itr)
-    grad_rs = []
     ids = np.random.randint(len(inputs), size=batch_size)
     feat_maps = inputs[ids]
     trajs = [t_trajs[i] for i in ids]
-    
-    p = Pool(batch_size)
-    
+    print 'batch_size=', batch_size
+    # manager = Manager()
+    # grad_rs = manager.list([None]*batch_size)
     grad_rs = []
+    # p = Pool(batch_size)
+    
     for i in range(batch_size):
       feat_map, traj = feat_maps[i], trajs[i]
-      grad_r = p.apply_async(get_grad, args=(feat_map, traj))
-      grad_rs.append(grad_r)
-    p.close()
-    p.join()
+      grad_rs.append(get_grad(feat_map, traj))
+      # p.apply_async(get_grad, args=(grad_rs, i, feat_map, traj))
+    # p.close()
+    # p.join()
+    # print "join"
       # feat_map = np.array([feat_map])
       # # mu_D = demo_sparse_svf(traj, N_STATES)
       # mu_D = demo_svf(traj, N_STATES)

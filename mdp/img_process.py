@@ -34,8 +34,11 @@ class ProcessCarImg(object):
     lin_imgs = self.read_imgs(lin_dir)
     obs_imgs = self.read_imgs(obs_dir)
     L = len(lin_imgs)
+    h, w, _ = lin_imgs[0].shape
+    ego_img = np.zeros((h, w, 1))
+    ego_img[h/2-2:h/2+2, w/2-2:w/2+2, :] = 100.0
     for i, lin_img, obs_img in zip(range(L), lin_imgs, obs_imgs):
-      mix_img = np.stack((lin_img, obs_img, np.zeros(lin_img.shape)), axis=-1)
+      mix_img = np.stack((lin_img, obs_img, ego_img), axis=-1)
       cv2.imwrite(mix_dir+'/'+str(i).zfill(4)+'.png', mix_img)
   
   def mix_set(self, fdir):
@@ -144,6 +147,18 @@ class ProcessCarImg(object):
           print 'eps {}: {}'.format(eps_name, i)
           break
       
+  def add_ego(self, img_dir):
+    img_names = sorted(os.listdir(img_dir))
+    h = w = 128
+    for img_name in img_names:
+      img = cv2.imread(img_dir+'/'+img_name)
+      img[h/2-2:h/2+2,w/2-2:w/2+2,-1] = 100.0
+      cv2.imwrite(img_dir+'/'+img_name, img)
+      
+  def add_ego_set(self, f_dir):
+    for img_dir in sorted(os.listdir(f_dir)):
+      self.add_ego(f_dir+'/'+img_dir+'/mix')
+  
       
 if __name__ == '__main__':
   input_fdir = '/home/pirate03/Downloads/carsim/train'
@@ -153,8 +168,8 @@ if __name__ == '__main__':
   # pci.make_data(input_fdir, output_fdir)
   
   # fdir = '/home/pirate03/Downloads/carsim/resized_train'
-  pci.mix_set(output_fdir)
-  
+  # pci.mix_set(output_fdir)
+  pci.add_ego_set('/home/pirate03/Downloads/carsim/resized_train')
   
   
   
