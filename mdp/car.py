@@ -40,6 +40,8 @@ class LinkAndDiscTraj(object):
     :return:
     """
     n = int(np.ceil(np.sqrt(np.sum((pos-next_pos)**2))/self._particle))
+    if n == 0:
+      return [np.copy(pos)]
     delta_x = (next_pos[0]-pos[0])/n
     delta_y = (next_pos[1]-pos[1])/n
     inter_pos = np.copy(pos)
@@ -89,8 +91,26 @@ class LinkAndDiscTraj(object):
         inter_linked_traj = []
       finally:
         linked_traj.extend(inter_linked_traj)
-    return self.dot_traj(linked_traj)
-  
+    
+    # calculate the goal line
+    pos = self._traj[-3]
+    next_pos = self._traj[-1]
+    road_width = 12.5
+    if pos[1] == next_pos[1]:
+      f_pos1 = np.array(next_pos[0], next_pos[1]-road_width/2)
+      f_pos2 = np.array(next_pos[0], next_pos[1]+road_width/2)
+    else:
+      # xielv = (next_pos[1] - pos[1]) / (next_pos[0] - pos[0])
+      # f_xielv = -1.0 / xielv
+      f_xielv = - (next_pos[0]-pos[0])/(next_pos[1]-pos[1])
+      l_grid = np.sqrt(1+f_xielv**2)
+      delta = np.array([road_width/2/l_grid, road_width/2/l_grid*f_xielv])
+      f_pos1 = next_pos + delta
+      f_pos2 = next_pos - delta
+    goal_line = self.link_pos(f_pos1, f_pos2)
+    
+    return self.dot_traj(linked_traj), self.dot_traj(goal_line)
+    
   
   def is_tile(self, pos1, pos2):
     tile_poses = [(pos1[0]-1, pos1[1]-1),
@@ -131,7 +151,7 @@ class LinkAndDiscTraj(object):
     return pos / np.array([self._grid_h, self._grid_w])
   
   def discrete(self):
-    doted_traj = self.dot()
+    doted_traj, doted_goal_lin = self.dot()
     goal = doted_traj[-1]
     goal = np.array([goal[0], goal[1]])
     # doted_traj = self.tile_traj(doted_traj)
@@ -145,7 +165,7 @@ class LinkAndDiscTraj(object):
         discreted_traj.append(discreted_pos)
     # discreted_traj = self.distile_traj(discreted_traj)
     # discreted_traj = self.tile_traj(discreted_traj)
-    return discreted_traj, goal
+    return discreted_traj, goal, doted_goal_lin
   
 
 

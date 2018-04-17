@@ -64,6 +64,7 @@ class FCNIRL:
       conv4 = tf_utils.conv2d(conv3, 64, [2,2], name='conv4')
       conv4 = tf_utils.bn(conv4, is_train=self.is_train, name='bn4')
       reward = tf_utils.conv2d(conv4, 1, [1,1], name='reward')
+      reward = tf_utils.bn(reward, is_train=self.is_train, name='bn_reward')
       # reward = tf_utils.conv2d(conv1, 1, [1,1])
       # conv3 = tf_utils.conv2d(conv2, 1, [1,1])
       # conv4 = tf.concat([input_s, conv3], axis=-1)
@@ -222,7 +223,7 @@ def fcn_maxent_irl(inputs, nn_r, P_a, gamma, t_trajs, lr, n_iters, gpu_fraction,
     reward = nn_r.get_rewards(feat_map, is_train=True)
     # print "rewards\n", rewards
     reward = np.reshape(reward, N_STATES, order='F')
-    reward = normalize(reward)
+    # reward = normalize(reward)
     # rewards = np.reshape(rewards, feat_map.shape[1]*feat_map.shape[2], order='F')
     _, policy = value_iteration.value_iteration(P_a, reward, gamma, error=0.1, deterministic=True, max_itrs=max_itr)
     mu_exp = compute_state_visition_freq(P_a, gamma, [traj], policy, deterministic=True)

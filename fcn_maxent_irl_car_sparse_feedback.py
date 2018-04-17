@@ -23,12 +23,12 @@ PARSER.add_argument('-img_hei', '--img_height', default=128, type=int, help='hei
 PARSER.add_argument('-img_wid', '--img_width', default=128, type=int, help='width of the img')
 PARSER.add_argument('-g', '--gamma', default=0.9, type=float, help='discount factor')
 PARSER.add_argument('-nd', '--n_demos', default=16, type=int, help='number of expert trajectories')
-PARSER.add_argument('-lp', '--l_pos', default=2, type=int, help='length of concated positions')
-PARSER.add_argument('-lr', '--learning_rate', default=0.001, type=float, help='learning rate')
-PARSER.add_argument('-ni', '--n_iters', default=2000, type=int, help='number of iterations')
+PARSER.add_argument('-lp', '--l_pos', default=3, type=int, help='length of concated positions')
+PARSER.add_argument('-lr', '--learning_rate', default=0.01, type=float, help='learning rate')
+PARSER.add_argument('-ni', '--n_iters', default=800, type=int, help='number of iterations')
 # PARSER.add_argument('-rd', '--record_dir', default="/home/pirate03/Downloads/carsim/resized_train_part2", type=str, \
 #                     help='recording data dir')
-PARSER.add_argument('-ld', '--log_dir', default="/home/pirate03/Downloads/carsim/exp/31", type=str, \
+PARSER.add_argument('-ld', '--log_dir', default="/home/pirate03/Downloads/carsim/exp/43", type=str, \
                     help='training log dir')
 PARSER.add_argument('-name', '--exp_name', default="gw10_fcn_sparse_feed", type=str, help='experiment name')
 PARSER.add_argument('-n_exp', '--n_exp', default=20, type=int, help='repeat experiment n times')
@@ -36,7 +36,7 @@ PARSER.add_argument('-gpu_frac', '--gpu_fraction', default=0.2, type=float, help
 PARSER.add_argument('-l2', '--l2', default=0., type=float, help='l2 norm')
 PARSER.add_argument('-term', '--terminal', default=True, type=bool, help='terminal or not when agent reach the goal')
 PARSER.add_argument('--train', dest='is_train', action='store_true', help='train or test')
-PARSER.add_argument('--test', dest='is_train',action='store_false', help='train or test')
+PARSER.add_argument('--test', dest='is_train', action='store_false', help='train or test')
 PARSER.add_argument('-max_vi', '--max_vi', default=100, type=int, help='value iteration max num')
 PARSER.set_defaults(is_train=True)
 ARGS = PARSER.parse_args()
@@ -63,9 +63,11 @@ IS_TRAIN = ARGS.is_train
 if IS_TRAIN:
   RECORD_DIR = '/home/pirate03/Downloads/carsim/resized_train'
 else:
-  RECORD_DIR = '/home/pirate03/Downloads/carsim/resized_train_part2'
+  RECORD_DIR = '/home/pirate03/Downloads/carsim/resized_train'
 print RECORD_DIR
 MAX_VI = ARGS.max_vi
+
+print "Batch norm rewards"
 
 class CarIRLExp(object):
   def __init__(self, l_pos, n_demos, rec_dir, log_dir, gamma=0.9,
@@ -151,9 +153,14 @@ class CarIRLExp(object):
     ego_img[self._img_h/2-2:self._img_h/2+2, self._img_w/2-2:self._img_w/2+2, 0] = 1.0
     for i in range(len(imgs)-self._l_pos-2):
       traj = poses[i+3:i+3+self._l_pos]
-      disc_traj, goal = LinkAndDiscTraj(traj=traj, img_h=self._img_h, img_w=self._img_w,
+      if np.sum(np.abs(traj[-1]-traj[-2])) < 1.0:
+        continue
+      disc_traj, goal, doted_goal_lin = LinkAndDiscTraj(traj=traj, img_h=self._img_h, img_w=self._img_w,
                                         grid_h=self._grid_h, grid_w=self._grid_w,
                                         particle=0.2*500.0/self._img_h, idx=i).discrete()
+      goal_lin_img = np.zeros((self._img_h, self._img_w, 1))
+      for doted_goal in doted_goal_lin:
+        goal_lin_img[doted_goal[0], doted_goal[1], 0] = 1.0
       print 'goal: ', goal
       idx_traj = []
       for disc_pos in disc_traj:
@@ -162,7 +169,7 @@ class CarIRLExp(object):
       # goal_img[max(goal[0]-2, 0):goal[0]+2, max(goal[1]-2, 0):goal[1]+2, :] = 1.0
       # goal_img = goal_img[np.newaxis, :, :, np.newaxis]
       # img = np.concatenate((imgs[i], imgs[i+1], goal_img), axis=-1)
-      img = np.concatenate((imgs[i], imgs[i+1], imgs[i+2], ego_img), axis=-1)
+      img = np.concatenate((imgs[i], imgs[i+1], imgs[i+2], ego_img, goal_lin_img), axis=-1)
       mtrajs.append(MTraj(img, idx_traj))
     return mtrajs
   
@@ -263,7 +270,7 @@ class CarIRLExp(object):
         print r
       # print "rewards\n", rewards
       reward = np.reshape(reward, N_STATES, order='F')
-      reward = normalize(reward)
+      # reward = normalize(reward)
       value, policy = value_iteration.value_iteration(self._P_a, reward, self._gamma, error=0.1, deterministic=True,
                                                       max_itrs=self._max_vi)
       mu_exp = compute_state_visition_freq(self._P_a, self._gamma, [traj], policy, deterministic=True)
@@ -299,7 +306,6 @@ if __name__ == "__main__":
     # ids = range(20)
     # car_irl_exp.train(range(400))
     car_irl_exp.train()
-    # car_irl_exp.simple_train()
   else:
     print "we are testing"
     car_irl_exp.test()
